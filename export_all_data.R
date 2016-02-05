@@ -29,7 +29,7 @@ demog.data <- read.csv(text = postForm(uri = use.uri,
                                        rawOrLabel = use.rawlabel,
                                        rawOrLabelHeaders = use.rawheader,
                                        returnFormat = use.format),
-                       stringsAsFactors = FALSE)
+                       stringsAsFactors = FALSE, na.strings = c('', 'NULL'))
 
 ## -- Read in drug infusion data -------------------------------------------------------------------
 infusion.data <- read.csv(text = postForm(uri = use.uri,
@@ -42,7 +42,7 @@ infusion.data <- read.csv(text = postForm(uri = use.uri,
                                           rawOrLabel = use.rawlabel,
                                           rawOrLabelHeaders = use.rawheader,
                                           returnFormat = use.format),
-                          stringsAsFactors = FALSE)
+                          stringsAsFactors = FALSE, na.strings = c('', 'NULL'))
 
 ## -- Read in medical record (Ehrenfeld) data ------------------------------------------------------
 mr.data <- read.csv(text = postForm(uri = use.uri,
@@ -55,4 +55,4 @@ mr.data <- read.csv(text = postForm(uri = use.uri,
                                     rawOrLabel = use.rawlabel,
                                     rawOrLabelHeaders = use.rawheader,
                                     returnFormat = use.format),
-                    stringsAsFactors = FALSE)
+                    stringsAsFactors = FALSE, na.strings = c('', 'NULL'))
