@@ -18,7 +18,7 @@ names(infusion.data) <- gsub('_', '.', names(infusion.data), fixed = TRUE)
 ## -- Merge MR data and drug drip data for calculating drug totals ---------------------------------
 daily.data <- merge(mr.data, infusion.data, by = c('mrn', 'redcap.event.name'), all = TRUE)
 
-## -- Derive necessary variables -------------------------------------------------------------------
+## -- Derive necessary variables using daily data --------------------------------------------------
 ## Pupil reactivity
 ## Double check this once Maddie is done entering data; currently left pupil has 23% missingness
 ##  but right pupil has nearly 99%!
@@ -28,6 +28,19 @@ daily.data$n.pupil.react <-
 daily.data$pupil.react <- factor(daily.data$n.pupil.react,
                                  levels = 0:2,
                                  labels = c('Both fixed', 'One reactive', 'Both reactive'))
+
+## -- Get baseline MR variables from day 00 (need pupil reactivity) --------------------------------
+day00.data <- subset(daily.data,
+                     redcap.event.name == 'Inpatient Day 00',
+                     select = c(mrn, med.wt.encounter, max.motor, min.glucose, min.hemoglobin,
+                                pupil.react))
+names(day00.data) <- c('mrn', 'base.weight', 'base.motor', 'base.glucose', 'base.hemoglobin',
+                       'base.pupil.react')
+
+## Merge baseline weight back onto daily data for use in drug scaling
+daily.data <- merge(daily.data,
+                    subset(day00.data, select = c(mrn, base.weight)),
+                    by = 'mrn', all.x = TRUE, all.y = FALSE)
 
 ## Mental status:
 ## coma = minimum RASS = -5 or -4
@@ -58,12 +71,16 @@ daily.data$sofa.cns <- with(daily.data, {
   ifelse(min.sum.evm <= 14, 1, 0))))) })
 
 ## Cardiovascular component
-## Have question out to M/J about pressor doses
+## Create scaled versions of pressors where dosage matters for SOFA: [units]/kg/min
+daily.data$scaled.dopa <- with(daily.data, drip.dopa / (base.weight * 24 * 60))
+daily.data$scaled.epi <- with(daily.data, drip.epi / (base.weight * 24 * 60))
+daily.data$scaled.norepi <- with(daily.data, drip.norepi / (base.weight * 24 * 60))
+
 daily.data$sofa.cv <- with(daily.data, {
-  ifelse((!is.na(drip.dopa) & drip.dopa > 15) |
-           (!is.na(drip.epi) & drip.epi > 0.1) |
-           (!is.na(drip.norepi) & drip.norepi > 0.1), 4,
-  ifelse((!is.na(drip.dopa) & drip.dopa > 5) |
+  ifelse((!is.na(scaled.dopa) & scaled.dopa > 15) |
+           (!is.na(scaled.epi) & scaled.epi > 0.1) |
+           (!is.na(scaled.norepi) & scaled.norepi > 0.1), 4,
+  ifelse((!is.na(scaled.dopa) & scaled.dopa > 5) |
            (!is.na(drip.epi) & drip.epi > 0) |
            (!is.na(drip.norepi) & drip.norepi > 0), 3,
   ifelse((!is.na(drip.dopa) & drip.dopa > 0) |
@@ -74,10 +91,11 @@ daily.data$sofa.cv <- with(daily.data, {
   ifelse(!is.na(min.map) & min.map < 70, 1,
   ifelse(!is.na(min.map), 0, NA))))) })
 
-## Liver component
+## Liver component: per PIs, assume a score of 0 (normal) if no bilirubin available; missingness
+##  is highly informative
 ## Double check this once Maddie is done - currently no non-missing values
 daily.data$sofa.liver <- with(daily.data, {
-  ifelse(is.na(max.tot.bilirubin), NA,
+  ifelse(is.na(max.tot.bilirubin), 0,
   ifelse(max.tot.bilirubin > 12, 4,
   ifelse(max.tot.bilirubin >= 6, 3,
   ifelse(max.tot.bilirubin >= 2, 2,
@@ -101,3 +119,15 @@ daily.data$sofa.renal <- with(daily.data, {
            (!is.na(urine) & urine < 500), 3,
   ifelse(!is.na(max.creatinine) & max.creatinine >= 2, 2,
   ifelse(!is.na(max.creatinine) & max.creatinine >= 1.2, 1, 0))))) })
+
+## Calculate overall and modified SOFA; two versions of each:
+## - missing component data assumed to be normal
+## - missing component data considered missing
+sofa.comps <- paste0('sofa.', c('resp', 'cns', 'cv', 'liver', 'coag', 'renal'))
+sofa.mod.comps <- setdiff(sofa.comps, 'sofa.cns')
+
+daily.data$sofa.nanormal <- rowSums(daily.data[,sofa.comps], na.rm = TRUE)
+daily.data$sofa.namissing <- rowSums(daily.data[,sofa.comps], na.rm = FALSE)
+
+daily.data$sofa.mod.nanormal <- rowSums(daily.data[,sofa.mod.comps], na.rm = TRUE)
+daily.data$sofa.mod.namissing <- rowSums(daily.data[,sofa.mod.comps], na.rm = FALSE)
