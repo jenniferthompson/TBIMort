@@ -2,6 +2,16 @@
 ## Create analysis data set for TBI/mortality analyses
 ####################################################################################################
 
+library(dplyr) ## used for easy summarizing for outcome variables
+
+## Function to take a variable with "Missing" as an option and recode as NA
+missing.options <- c('Missing', 'Not recorded/Missing', 'Missing/Unknown', 'Unknown/Missing',
+                     'Not Recorded', 'Missing/Not Recorded', 'Missing or no data', 'Unknown')
+rm.miss <- function(x){ ifelse(x %in% missing.options, NA, x) }
+
+## Function to create and relevel a factor variable given a reference string
+f.relevel <- function(x, rlev){ relevel(factor(x), ref = rlev) }
+
 ## -- Import data from REDCap ----------------------------------------------------------------------
 source('export_all_data.R')
 
@@ -93,7 +103,6 @@ daily.data$sofa.cv <- with(daily.data, {
 
 ## Liver component: per PIs, assume a score of 0 (normal) if no bilirubin available; missingness
 ##  is highly informative
-## Double check this once Maddie is done - currently no non-missing values
 daily.data$sofa.liver <- with(daily.data, {
   ifelse(is.na(max.tot.bilirubin), 0,
   ifelse(max.tot.bilirubin > 12, 4,
@@ -132,6 +141,33 @@ daily.data$sofa.namissing <- rowSums(daily.data[,sofa.comps], na.rm = FALSE)
 daily.data$sofa.mod.nanormal <- rowSums(daily.data[,sofa.mod.comps], na.rm = TRUE)
 daily.data$sofa.mod.namissing <- rowSums(daily.data[,sofa.mod.comps], na.rm = FALSE)
 
+## Drug and blood product variables (need formulas for a lot of these) ##
+## For now, using BRAIN formulas for benzos and opioids; ignores some drugs we have data on
+## Benzos
+daily.data$bolus.loraz.midaz <- daily.data$bolus.loraz * 2.5
+daily.data$drip.loraz.midaz <- daily.data$drip.loraz * 2.5
+daily.data$bolus.diaz.midaz <- daily.data$bolus.diaz / 2
+
+benzo.components <- c('bolus.midaz', 'drip.midaz', 'bolus.loraz.midaz', 'drip.loraz.midaz',
+                      'bolus.diaz.midaz')
+
+daily.data$tot.benzo <- rowSums(daily.data[,benzo.components], na.rm = TRUE)
+
+## Opioids
+daily.data$bolus.hydromorph.fent <- (daily.data$bolus.hydromorph / 7.5) * 1000
+daily.data$drip.hydromorph.fent <- (daily.data$drip.hydromorph / 7.5) * 1000
+daily.data$drip.morph.fent <- (daily.data$drip.morph / 50) * 1000
+
+opioid.components <- c('bolus.fent', 'drip.fent', 'bolus.hydromorph.fent', 'drip.hydromorph.fent',
+                       'drip.morph.fent')
+
+daily.data$tot.opioid <- rowSums(daily.data[,opioid.components], na.rm = TRUE)
+
+## No formulas yet for antipsychotics, beta-blockers, blood transfusions
+daily.data$tot.antipsyc <- NA
+daily.data$tot.betablock <- NA
+daily.data$tot.transfuse <- NA
+
 ## -- Data management for demographic/summary data -------------------------------------------------
 demog.data$pt.admit <- as.Date(demog.data$pt.admit, format = '%Y-%m-%d')
 demog.data$pt.injury.date <- as.Date(demog.data$pt.injury.date, format = '%Y-%m-%d')
@@ -141,12 +177,16 @@ demog.data$final.death.date <- as.Date(demog.data$final.death.date, format = '%m
 demog.data$discharge.date <- as.Date(demog.data$discharge.date, format = '%Y-%m-%d')
 
 ## -- Calculate outcome variables ------------------------------------------------------------------
-## Time to in-hospital death: admission to time of in-hospital death, or censored at discharge
+## Time to in-hospital death: admission to time of in-hospital death
 demog.data$time.death.inhosp <- with(demog.data, {
-  ifelse(is.na(pt.admit), NA,
-  ifelse(!is.na(hosp.death.date),
-         as.numeric(difftime(hosp.death.date, pt.admit, units = 'days')),
-         as.numeric(difftime(discharge.date, pt.admit, units = 'days')))) })
+  ifelse(is.na(pt.admit) | is.na(hosp.death.date), NA,
+         as.numeric(difftime(hosp.death.date, pt.admit, units = 'days'))) })
+
+## Time to in-hospital death or discharge: admission to time of in-hospital death, or
+##  censored at discharge
+demog.data$time.death.dc <- with(demog.data, {
+  ifelse(!is.na(time.death.inhosp), time.death.inhosp,
+         as.numeric(difftime(discharge.date, pt.admit, units = 'days'))) })
 
 ## Time to overall death: admission to max(SSDI death, hospital death)
 demog.data$time.death.ever <- with(demog.data, {
@@ -160,12 +200,107 @@ demog.data$time.death.3yr <-
   ifelse(is.na(demog.data$time.death.ever), 1095, demog.data$time.death.ever)
 
 ## Delirium, coma duration
-library(dplyr)
 mental.vars <- daily.data %>%
   group_by(mrn) %>%
   summarise(n.recs = n(),
-            days.assessed = sum(!is.na(mental.status)),
-            days.del = ifelse(days.assessed == 0, NA,
+            days.mental = sum(!is.na(mental.status)),
+            days.del = ifelse(days.mental == 0, NA,
                               sum(mental.status == 'Delirious', na.rm = TRUE)),
-            days.coma = ifelse(days.assessed == 0, NA,
+            days.coma = ifelse(days.mental == 0, NA,
                                sum(mental.status == 'Comatose', na.rm = TRUE)))
+
+## -- Demographic data management ------------------------------------------------------------------
+demog.data$race2 <- f.relevel(demog.data$race, 'White')
+demog.data$gender <- f.relevel(demog.data$gender, 'Male')
+demog.data$insurance.code <- f.relevel(demog.data$insurance.code, 'Private')
+demog.data$cpr.yn <- f.relevel(demog.data$cpr.yn, 'Not Performed Pre-Hospital, Ref Hospital, or ED')
+demog.data$pt.marshall <- f.relevel(demog.data$pt.marshall, 'Marshall Class I')
+demog.data$pt.cerebral.na <- f.relevel(rm.miss(demog.data$pt.cerebral), 'No')
+demog.data$pt.epidural.na <- f.relevel(rm.miss(demog.data$pt.epidural), 'No')
+demog.data$pt.injury.na <- f.relevel(rm.miss(demog.data$pt.injury), 'Blunt')
+demog.data$disposition.coded <- f.relevel(demog.data$disposition.coded, 'Discharged home')
+demog.data$hosp.death <- f.relevel(demog.data$hosp.death, 'No')
+demog.data$final.death <- f.relevel(demog.data$final.death, 'No')
+
+## -- Create analysis data sets --------------------------------------------------------------------
+tbi.oneobs <- subset(demog.data,
+                     select = c(mrn, age, gender, race, insurance.code, iss, cpr.yn, pt.marshall,
+                                pt.cerebral, pt.cerebral.na, pt.epidural, pt.epidural.na, pt.injury,
+                                pt.injury.na, vent.days, disposition.coded, fim.total, hosp.death,
+                                time.death.inhosp, time.death.dc, final.death, time.death.3yr,
+                                time.death.ever)) %>%
+  left_join(day00.data, by = 'mrn') %>%
+  left_join(mental.vars, by = 'mrn')
+
+label(tbi.oneobs$mrn) <- 'Medical record number'
+label(tbi.oneobs$age) <- 'Age at admission'
+label(tbi.oneobs$gender) <- 'Gender'
+label(tbi.oneobs$race) <- 'Race'
+label(tbi.oneobs$insurance.code) <- 'Insurance type'
+label(tbi.oneobs$iss) <- 'Injury Severity Score'
+label(tbi.oneobs$cpr.yn) <- 'CPR performed'
+label(tbi.oneobs$pt.marshall) <- 'Marshall Class Equivalent'
+label(tbi.oneobs$pt.cerebral) <- 'Cerebral subarachnoid hemorrhage'
+label(tbi.oneobs$pt.cerebral.na) <- 'Cerebral SAH (unknown = NA)'
+label(tbi.oneobs$pt.epidural) <- 'Cerebral extra/epidural mass'
+label(tbi.oneobs$pt.epidural.na) <- 'Cerebral extra/epidural mass (unknown = NA)'
+label(tbi.oneobs$pt.injury) <- 'Injury type'
+label(tbi.oneobs$pt.injury.na) <- 'Injury type (unknown = NA)'
+label(tbi.oneobs$vent.days) <- 'Ventilator days'
+label(tbi.oneobs$disposition.coded) <- 'Discharge disposition'
+label(tbi.oneobs$fim.total) <- 'FIM total score'
+label(tbi.oneobs$hosp.death) <- 'Died in hospital'
+label(tbi.oneobs$time.death.inhosp) <- 'Days to in-hospital death'
+label(tbi.oneobs$time.death.dc) <- 'Hospital LOS (days to in-hospital death or discharge)'
+label(tbi.oneobs$final.death) <- 'Died in hospital or per SSDI'
+label(tbi.oneobs$time.death.ever) <- 'Days to death'
+label(tbi.oneobs$time.death.3yr) <- 'Days to death or 3-year mark'
+label(tbi.oneobs$base.weight) <- 'Median weight during encounter (kg)'
+label(tbi.oneobs$base.motor) <- 'Maximum motor response, day 0'
+label(tbi.oneobs$base.glucose) <- 'Minimum glucose, day 0'
+label(tbi.oneobs$base.hemoglobin) <- 'Minimum hemoglobin, day 0'
+label(tbi.oneobs$base.pupil.react) <- 'Pupil reactivity, day 0'
+label(tbi.oneobs$n.recs) <- 'Number of daily records'
+label(tbi.oneobs$days.mental) <- 'Days with mental status info'
+label(tbi.oneobs$days.del) <- 'Days of delirium'
+label(tbi.oneobs$days.coma) <- 'Days of coma'
+
+tbi.daily <- subset(daily.data,
+                    select = c(mrn, redcap.event.name, mental.status, max.motor, pupil.react,
+                               min.glucose, min.hemoglobin, med.sodium, sofa.resp, sofa.cns,
+                               sofa.cv, sofa.liver, sofa.coag, sofa.renal, sofa.nanormal,
+                               sofa.namissing, sofa.mod.nanormal, sofa.mod.namissing,
+                               tot.benzo, tot.opioid, drip.propofol, drip.dex, tot.antipsyc,
+                               tot.betablock, bolus.pento, bolus.clonid, tot.transfuse))
+
+names(tbi.daily) <- gsub('^redcap\\.event\\.name$', 'event', names(tbi.daily))
+
+label(tbi.daily$mrn) <- 'Medical record number'
+label(tbi.daily$event) <- 'Study day'
+label(tbi.daily$mental.status) <- 'Mental status'
+label(tbi.daily$max.motor) <- 'Maximum motor response'
+label(tbi.daily$pupil.react) <- 'Pupil reactivity'
+label(tbi.daily$min.glucose) <- 'Minimum glucose'
+label(tbi.daily$min.hemoglobin) <- 'Minimum hemoglobin'
+label(tbi.daily$med.sodium) <- 'Median sodium'
+label(tbi.daily$sofa.resp) <- 'Respiratory SOFA'
+label(tbi.daily$sofa.cns) <- 'CNS SOFA'
+label(tbi.daily$sofa.cv) <- 'Cardiovascular SOFA'
+label(tbi.daily$sofa.liver) <- 'Liver SOFA'
+label(tbi.daily$sofa.coag) <- 'Coagulation SOFA'
+label(tbi.daily$sofa.renal) <- 'Renal SOFA'
+label(tbi.daily$sofa.nanormal) <- 'Overall SOFA, missing values considered normal'
+label(tbi.daily$sofa.namissing) <- 'Overall SOFA, missing values left as missing'
+label(tbi.daily$sofa.mod.nanormal) <- 'Modified SOFA, missing values considered normal'
+label(tbi.daily$sofa.mod.namissing) <- 'Modified SOFA, missing values left as missing'
+label(tbi.daily$tot.benzo) <- '24h benzodiazepines, midaz. equivalents (IGNORES SEVERAL DRUGS CURRENTLY)'
+label(tbi.daily$tot.opioid) <- '24h opioids, fentanyl equivalents (IGNORES SEVERAL DRUGS CURRENTLY)'
+label(tbi.daily$drip.propofol) <- '24h propofol'
+label(tbi.daily$drip.dex) <- '24h dexmedetomidine'
+label(tbi.daily$tot.antipsyc) <- '24h antipsychotics, haloperidol equivalents (NO FORMULA CURRENTLY)'
+label(tbi.daily$tot.betablock) <- '24h beta blockers (NO FORMULA CURRENTLY)'
+label(tbi.daily$bolus.pento) <- '24h pentobarbital'
+label(tbi.daily$bolus.clonid) <- '24h clonidine'
+label(tbi.daily$tot.transfuse) <- '24h blood transfusion products (NO FORMULA CURRENTLY)'
+
+save(tbi.oneobs, tbi.daily, file = 'tbi_datasets.Rdata')
