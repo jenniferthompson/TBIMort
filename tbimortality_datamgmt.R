@@ -131,3 +131,41 @@ daily.data$sofa.namissing <- rowSums(daily.data[,sofa.comps], na.rm = FALSE)
 
 daily.data$sofa.mod.nanormal <- rowSums(daily.data[,sofa.mod.comps], na.rm = TRUE)
 daily.data$sofa.mod.namissing <- rowSums(daily.data[,sofa.mod.comps], na.rm = FALSE)
+
+## -- Data management for demographic/summary data -------------------------------------------------
+demog.data$pt.admit <- as.Date(demog.data$pt.admit, format = '%Y-%m-%d')
+demog.data$pt.injury.date <- as.Date(demog.data$pt.injury.date, format = '%Y-%m-%d')
+demog.data$hosp.death.date <- as.Date(demog.data$hosp.death.date, format = '%Y-%m-%d')
+demog.data$ssdi.death.date <- as.Date(demog.data$ssdi.death.date, format = '%Y-%m-%d')
+demog.data$final.death.date <- as.Date(demog.data$final.death.date, format = '%m/%d/%Y')
+demog.data$discharge.date <- as.Date(demog.data$discharge.date, format = '%Y-%m-%d')
+
+## -- Calculate outcome variables ------------------------------------------------------------------
+## Time to in-hospital death: admission to time of in-hospital death, or censored at discharge
+demog.data$time.death.inhosp <- with(demog.data, {
+  ifelse(is.na(pt.admit), NA,
+  ifelse(!is.na(hosp.death.date),
+         as.numeric(difftime(hosp.death.date, pt.admit, units = 'days')),
+         as.numeric(difftime(discharge.date, pt.admit, units = 'days')))) })
+
+## Time to overall death: admission to max(SSDI death, hospital death)
+demog.data$time.death.ever <- with(demog.data, {
+  ifelse(is.na(pt.admit) | (is.na(hosp.death.date) & is.na(ssdi.death.date)), NA,
+  ifelse(is.na(hosp.death.date) | ssdi.death.date > hosp.death.date,
+         as.numeric(difftime(ssdi.death.date, pt.admit, units = 'days')),
+         as.numeric(difftime(hosp.death.date, pt.admit, units = 'days')))) })
+
+## Time to 3-year death: time to overall death, or censored at 1095 days
+demog.data$time.death.3yr <-
+  ifelse(is.na(demog.data$time.death.ever), 1095, demog.data$time.death.ever)
+
+## Delirium, coma duration
+library(dplyr)
+mental.vars <- daily.data %>%
+  group_by(mrn) %>%
+  summarise(n.recs = n(),
+            days.assessed = sum(!is.na(mental.status)),
+            days.del = ifelse(days.assessed == 0, NA,
+                              sum(mental.status == 'Delirious', na.rm = TRUE)),
+            days.coma = ifelse(days.assessed == 0, NA,
+                               sum(mental.status == 'Comatose', na.rm = TRUE)))
