@@ -1,0 +1,32 @@
+---
+title: "TBI/Mortality Descriptive Statistics"
+author: "Jennifer Thompson, MPH; Supervisor: Rameela Chandrasekhar, PhD"
+date: "February 10, 2016"
+output: pdf_document
+header-includes:
+   - \usepackage{setspace, relsize}
+geometry: margin=0.5in
+---
+
+Descriptive statistics are presented below for all variables used in analyses for the TBI mortality
+cohort. The first section presents descriptives for baseline and summary characteristics for
+each patient; the second presents descriptives for variables collected on a daily basis.
+
+```{r setup, message = FALSE}
+library(Hmisc)
+load('tbi_datasets.Rdata')
+```
+
+# Baseline and Summary Variables
+
+```{r desconeobs, results = 'asis'}
+latex(describe(tbi.oneobs), file = '', label = 'table:oneobs')
+```
+
+$\pagebreak$
+
+# Daily Variables
+
+```{r descdaily, results = 'asis'}
+latex(describe(tbi.daily), file = '', label = 'table:daily')
+```
