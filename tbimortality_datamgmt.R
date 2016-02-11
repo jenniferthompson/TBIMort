@@ -163,6 +163,12 @@ opioid.components <- c('bolus.fent', 'drip.fent', 'bolus.hydromorph.fent', 'drip
 
 daily.data$tot.opioid <- rowSums(daily.data[,opioid.components], na.rm = TRUE)
 
+## For single-variable drugs, create new variable that is 0 if no dose noted
+daily.data$tot.propofol <- with(daily.data, ifelse(is.na(drip.propofol), 0, drip.propofol))
+daily.data$tot.dex <- with(daily.data, ifelse(is.na(drip.dex), 0, drip.dex))
+daily.data$tot.pento <- with(daily.data, ifelse(is.na(bolus.pento), 0, bolus.pento))
+daily.data$tot.clonid <- with(daily.data, ifelse(is.na(bolus.clonid), 0, bolus.clonid))
+
 ## No formulas yet for antipsychotics, beta-blockers, blood transfusions
 daily.data$tot.antipsyc <- NA
 daily.data$tot.betablock <- NA
@@ -196,8 +202,11 @@ demog.data$time.death.ever <- with(demog.data, {
          as.numeric(difftime(hosp.death.date, pt.admit, units = 'days')))) })
 
 ## Time to 3-year death: time to overall death, or censored at 1095 days
-demog.data$time.death.3yr <-
-  ifelse(is.na(demog.data$time.death.ever), 1095, demog.data$time.death.ever)
+demog.data$time.death.3yr <- with(demog.data, {
+  ifelse(is.na(time.death.ever) | time.death.ever > 1095, 1095, time.death.ever) })
+demog.data$died.3yr <- with(demog.data, {
+  factor(ifelse(!is.na(time.death.ever) & time.death.ever <= 1095, 1, 0),
+         levels = 0:1, labels = c('No', 'Yes')) })
 
 ## Delirium, coma duration
 mental.vars <- daily.data %>%
@@ -227,7 +236,7 @@ tbi.oneobs <- subset(demog.data,
                      select = c(mrn, age, gender, race, insurance.code, iss, cpr.yn, pt.marshall,
                                 pt.cerebral, pt.cerebral.na, pt.epidural, pt.epidural.na, pt.injury,
                                 pt.injury.na, vent.days, disposition.coded, fim.total, hosp.death,
-                                time.death.inhosp, time.death.dc, final.death, time.death.3yr,
+                                time.death.inhosp, time.death.dc, died.3yr, time.death.3yr,
                                 time.death.ever)) %>%
   left_join(day00.data, by = 'mrn') %>%
   left_join(mental.vars, by = 'mrn')
@@ -252,8 +261,8 @@ label(tbi.oneobs$fim.total) <- 'FIM total score'
 label(tbi.oneobs$hosp.death) <- 'Died in hospital'
 label(tbi.oneobs$time.death.inhosp) <- 'Days to in-hospital death'
 label(tbi.oneobs$time.death.dc) <- 'Hospital LOS (days to in-hospital death or discharge)'
-label(tbi.oneobs$final.death) <- 'Died in hospital or per SSDI'
 label(tbi.oneobs$time.death.ever) <- 'Days to death'
+label(tbi.oneobs$died.3yr) <- 'Died on or before 3-year mark'
 label(tbi.oneobs$time.death.3yr) <- 'Days to death or 3-year mark'
 label(tbi.oneobs$base.weight) <- 'Median weight during encounter (kg)'
 label(tbi.oneobs$base.motor) <- 'Maximum motor response, day 0'
@@ -270,8 +279,8 @@ tbi.daily <- subset(daily.data,
                                min.glucose, min.hemoglobin, med.sodium, sofa.resp, sofa.cns,
                                sofa.cv, sofa.liver, sofa.coag, sofa.renal, sofa.nanormal,
                                sofa.namissing, sofa.mod.nanormal, sofa.mod.namissing,
-                               tot.benzo, tot.opioid, drip.propofol, drip.dex, tot.antipsyc,
-                               tot.betablock, bolus.pento, bolus.clonid, tot.transfuse))
+                               tot.benzo, tot.opioid, tot.propofol, tot.dex, tot.antipsyc,
+                               tot.betablock, tot.pento, tot.clonid, tot.transfuse))
 
 names(tbi.daily) <- gsub('^redcap\\.event\\.name$', 'event', names(tbi.daily))
 
@@ -295,12 +304,12 @@ label(tbi.daily$sofa.mod.nanormal) <- 'Modified SOFA, missing values considered 
 label(tbi.daily$sofa.mod.namissing) <- 'Modified SOFA, missing values left as missing'
 label(tbi.daily$tot.benzo) <- '24h benzodiazepines, midaz. equivalents (IGNORES SEVERAL DRUGS CURRENTLY)'
 label(tbi.daily$tot.opioid) <- '24h opioids, fentanyl equivalents (IGNORES SEVERAL DRUGS CURRENTLY)'
-label(tbi.daily$drip.propofol) <- '24h propofol'
-label(tbi.daily$drip.dex) <- '24h dexmedetomidine'
+label(tbi.daily$tot.propofol) <- '24h propofol'
+label(tbi.daily$tot.dex) <- '24h dexmedetomidine'
 label(tbi.daily$tot.antipsyc) <- '24h antipsychotics, haloperidol equivalents (NO FORMULA CURRENTLY)'
 label(tbi.daily$tot.betablock) <- '24h beta blockers (NO FORMULA CURRENTLY)'
-label(tbi.daily$bolus.pento) <- '24h pentobarbital'
-label(tbi.daily$bolus.clonid) <- '24h clonidine'
+label(tbi.daily$tot.pento) <- '24h pentobarbital'
+label(tbi.daily$tot.clonid) <- '24h clonidine'
 label(tbi.daily$tot.transfuse) <- '24h blood transfusion products (NO FORMULA CURRENTLY)'
 
 ## Save date that analysis data sets were created
