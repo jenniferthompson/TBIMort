@@ -17,6 +17,8 @@ library(Hmisc)
 load('tbi_datasets.Rdata')
 ```
 
+All code used to create analysis data sets can be found at [https://github.com/jenniferthompson/TBIMort/blob/master/tbimortality_datamgmt.R](https://github.com/jenniferthompson/TBIMort/blob/master/tbimortality_datamgmt.R). The datasets were created at `r datasets.created.at`,  using raw data exported from REDCap.
+
 # Baseline and Summary Variables
 
 ```{r desconeobs, results = 'asis'}

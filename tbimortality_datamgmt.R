@@ -303,4 +303,7 @@ label(tbi.daily$bolus.pento) <- '24h pentobarbital'
 label(tbi.daily$bolus.clonid) <- '24h clonidine'
 label(tbi.daily$tot.transfuse) <- '24h blood transfusion products (NO FORMULA CURRENTLY)'
 
-save(tbi.oneobs, tbi.daily, file = 'tbi_datasets.Rdata')
+## Save date that analysis data sets were created
+datasets.created.at <- Sys.time()
+
+save(tbi.oneobs, tbi.daily, datasets.created.at, file = 'tbi_datasets.Rdata')
