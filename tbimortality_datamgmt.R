@@ -141,8 +141,7 @@ daily.data$sofa.namissing <- rowSums(daily.data[,sofa.comps], na.rm = FALSE)
 daily.data$sofa.mod.nanormal <- rowSums(daily.data[,sofa.mod.comps], na.rm = TRUE)
 daily.data$sofa.mod.namissing <- rowSums(daily.data[,sofa.mod.comps], na.rm = FALSE)
 
-## Drug and blood product variables (need formulas for a lot of these) ##
-## For now, using BRAIN formulas for benzos and opioids; ignores some drugs we have data on
+## Drug variables ##
 ## Benzos
 daily.data$bolus.loraz.midaz <- daily.data$bolus.loraz * 2.5
 daily.data$drip.loraz.midaz <- daily.data$drip.loraz * 2.5
@@ -163,16 +162,38 @@ opioid.components <- c('bolus.fent', 'drip.fent', 'bolus.hydromorph.fent', 'drip
 
 daily.data$tot.opioid <- rowSums(daily.data[,opioid.components], na.rm = TRUE)
 
+## Total antipsychotics: use regression formulas in Table 3 of Andreasen et al,
+##  Biological Psychiatry, vol 67 issue 3 1 Feb 2010, to get haloperidol equivalents
+##  http://www.sciencedirect.com/science/article/pii/S0006322309011251
+daily.data$halop.olanz <- (daily.data$bolus.olanz / 2.9)^(1 / 0.805)
+daily.data$halop.quet <- (daily.data$bolus.quet / 88.16)^(1 / 0.786)
+daily.data$halop.risp <- (daily.data$bolus.risp / 0.79)^(1 / 0.851)
+daily.data$halop.zipras <- (daily.data$bolus.zipras / 35.59)^(1 / 0.578)
+
+antipsyc.components <- c('bolus.halop', 'halop.olanz', 'halop.quet', 'halop.risp', 'halop.zipras')
+
+daily.data$tot.antipsyc <- rowSums(daily.data[,antipsyc.components], na.rm = TRUE)
+
+## Total beta blockers
+daily.data$beta.propran <- daily.data$bolus.propran * 1.25
+daily.data$beta.labet <- daily.data$bolus.labet * 0.5
+daily.data$beta.esmo <- (daily.data$drip.esmo / 1000) / 10
+
+betablock.components <- c('bolus.metop', 'beta.propran', 'beta.labet', 'beta.esmo')
+
+daily.data$tot.betablock <- rowSums(daily.data[,betablock.components], na.rm = TRUE)
+
 ## For single-variable drugs, create new variable that is 0 if no dose noted
 daily.data$tot.propofol <- with(daily.data, ifelse(is.na(drip.propofol), 0, drip.propofol))
 daily.data$tot.dex <- with(daily.data, ifelse(is.na(drip.dex), 0, drip.dex))
 daily.data$tot.pento <- with(daily.data, ifelse(is.na(bolus.pento), 0, bolus.pento))
 daily.data$tot.clonid <- with(daily.data, ifelse(is.na(bolus.clonid), 0, bolus.clonid))
 
-## No formulas yet for antipsychotics, beta-blockers, blood transfusions
-daily.data$tot.antipsyc <- NA
-daily.data$tot.betablock <- NA
-daily.data$tot.transfuse <- NA
+## Blood products: convert from mL to units (mL not meaningful clinically)
+daily.data$units.prbc <- daily.data$tot.pbrc / 350
+daily.data$units.plasma <- daily.data$tot.plasma / 350
+daily.data$units.platelets <- daily.data$tot.platelets / 600
+daily.data$units.cryo <- daily.data$tot.cryo / 250
 
 ## -- Data management for demographic/summary data -------------------------------------------------
 demog.data$pt.admit <- as.Date(demog.data$pt.admit, format = '%Y-%m-%d')
@@ -280,7 +301,8 @@ tbi.daily <- subset(daily.data,
                                sofa.cv, sofa.liver, sofa.coag, sofa.renal, sofa.nanormal,
                                sofa.namissing, sofa.mod.nanormal, sofa.mod.namissing,
                                tot.benzo, tot.opioid, tot.propofol, tot.dex, tot.antipsyc,
-                               tot.betablock, tot.pento, tot.clonid, tot.transfuse))
+                               tot.betablock, tot.pento, tot.clonid, units.cryo, units.plasma,
+                               units.platelets, units.prbc))
 
 names(tbi.daily) <- gsub('^redcap\\.event\\.name$', 'event', names(tbi.daily))
 
@@ -302,15 +324,18 @@ label(tbi.daily$sofa.nanormal) <- 'Overall SOFA, missing values considered norma
 label(tbi.daily$sofa.namissing) <- 'Overall SOFA, missing values left as missing'
 label(tbi.daily$sofa.mod.nanormal) <- 'Modified SOFA, missing values considered normal'
 label(tbi.daily$sofa.mod.namissing) <- 'Modified SOFA, missing values left as missing'
-label(tbi.daily$tot.benzo) <- '24h benzodiazepines, midaz. equivalents (IGNORES SEVERAL DRUGS CURRENTLY)'
-label(tbi.daily$tot.opioid) <- '24h opioids, fentanyl equivalents (IGNORES SEVERAL DRUGS CURRENTLY)'
+label(tbi.daily$tot.benzo) <- '24h benzodiazepines, midaz. equivalents (IGNORES ALPRAZOLAM, CLONAZEPAM CURRENTLY)'
+label(tbi.daily$tot.opioid) <- '24h opioids, fentanyl equivalents (IGNORES HYDROCODONE, REMIFENTANYL CURRENTLY)'
 label(tbi.daily$tot.propofol) <- '24h propofol'
 label(tbi.daily$tot.dex) <- '24h dexmedetomidine'
-label(tbi.daily$tot.antipsyc) <- '24h antipsychotics, haloperidol equivalents (NO FORMULA CURRENTLY)'
-label(tbi.daily$tot.betablock) <- '24h beta blockers (NO FORMULA CURRENTLY)'
+label(tbi.daily$tot.antipsyc) <- '24h antipsychotics, haloperidol equivalents'
+label(tbi.daily$tot.betablock) <- '24h beta blockers'
 label(tbi.daily$tot.pento) <- '24h pentobarbital'
 label(tbi.daily$tot.clonid) <- '24h clonidine'
-label(tbi.daily$tot.transfuse) <- '24h blood transfusion products (NO FORMULA CURRENTLY)'
+label(tbi.daily$units.prbc) <- 'Units of packed red blood cells given (mL/350)'
+label(tbi.daily$units.plasma) <- 'Units of plasma given (mL/350)'
+label(tbi.daily$units.platelets) <- 'Units of platelets given (mL/600)'
+label(tbi.daily$units.cryo) <- 'Units of cryoprecipitate given (mL/250)'
 
 ## Save date that analysis data sets were created
 datasets.created.at <- Sys.time()

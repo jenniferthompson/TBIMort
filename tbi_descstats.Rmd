@@ -22,7 +22,7 @@ All code used to create analysis data sets can be found at [https://github.com/j
 # Baseline and Summary Variables
 
 ```{r desconeobs, results = 'asis'}
-latex(describe(tbi.oneobs), file = '', label = 'table:oneobs')
+latex(describe(tbi.oneobs), file = '')
 ```
 
 $\pagebreak$
@@ -30,5 +30,5 @@ $\pagebreak$
 # Daily Variables
 
 ```{r descdaily, results = 'asis'}
-latex(describe(tbi.daily), file = '', label = 'table:daily')
+latex(describe(tbi.daily), file = '')
 ```
