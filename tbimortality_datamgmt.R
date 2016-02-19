@@ -297,9 +297,9 @@ label(tbi.oneobs$days.coma) <- 'Days of coma'
 
 tbi.daily <- subset(daily.data,
                     select = c(mrn, redcap.event.name, mental.status, max.motor, pupil.react,
-                               min.glucose, min.hemoglobin, med.sodium, sofa.resp, sofa.cns,
-                               sofa.cv, sofa.liver, sofa.coag, sofa.renal, sofa.nanormal,
-                               sofa.namissing, sofa.mod.nanormal, sofa.mod.namissing,
+                               min.glucose, min.hemoglobin, min.sodium, max.icp,
+                               sofa.resp, sofa.cns, sofa.cv, sofa.liver, sofa.coag, sofa.renal,
+                               sofa.nanormal, sofa.namissing, sofa.mod.nanormal, sofa.mod.namissing,
                                tot.benzo, tot.opioid, tot.propofol, tot.dex, tot.antipsyc,
                                tot.betablock, tot.pento, tot.clonid, units.cryo, units.plasma,
                                units.platelets, units.prbc))
@@ -313,7 +313,8 @@ label(tbi.daily$max.motor) <- 'Maximum motor response'
 label(tbi.daily$pupil.react) <- 'Pupil reactivity'
 label(tbi.daily$min.glucose) <- 'Minimum glucose'
 label(tbi.daily$min.hemoglobin) <- 'Minimum hemoglobin'
-label(tbi.daily$med.sodium) <- 'Median sodium'
+label(tbi.daily$min.sodium) <- 'Minimum sodium'
+label(tbi.daily$max.icp) <- 'Maximum ICP'
 label(tbi.daily$sofa.resp) <- 'Respiratory SOFA'
 label(tbi.daily$sofa.cns) <- 'CNS SOFA'
 label(tbi.daily$sofa.cv) <- 'Cardiovascular SOFA'
