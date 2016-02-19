@@ -1,0 +1,172 @@
+%% -- Specially formatted Latex comment tells RStudio to compile PDF with knitr
+% !Rnw weave = knitr
+
+\documentclass{article}
+
+\usepackage{setspace, relsize}
+\usepackage{longtable}
+\usepackage[margin = 0.5in]{geometry}
+\usepackage{hyperref}
+
+\title{TBI/Mortality Descriptive Statistics}
+\author{Jennifer Thompson, MPH
+        Supervisor: Rameela Chandrasekhar, PhD}
+\date{\today}
+
+\begin{document}
+\maketitle
+
+Descriptive statistics are presented below for all variables used in analyses for the TBI mortality
+cohort. The first section presents descriptives for baseline and summary characteristics for
+each patient; the second presents descriptives for variables collected on a daily basis.
+
+<<setup, message=FALSE>>=
+library(Hmisc)
+load('tbi_datasets.Rdata')
+@
+
+All code used to create analysis data sets can be found at
+
+\url{https://github.com/jenniferthompson/TBIMort/blob/master/tbimortality_datamgmt.R}
+
+The datasets were created at \Sexpr{datasets.created.at},  using raw data exported from REDCap.
+
+\section{Baseline and Summary Variables}
+
+<<desconeobs, results = 'asis'>>=
+latex(describe(tbi.oneobs), file = '')
+@
+
+\clearpage
+
+\section{Daily Variables}
+
+<<descdaily, results = 'asis'>>=
+latex(describe(tbi.daily), file = '')
+@
+
+\section{Missingness for Each Proposed Model}
+We need to determine how much of an issue missing data is for each model. Each table below shows the
+percentage of relevant records (either patients or patient-days) with missing data for each
+covariate.
+
+<<modmissing>>=
+## -- Create function to calculate proportion of records missing data for each covariate -----------
+describe.missing <- function(dataset, var){
+  ## Character/factor variable
+  if('factor' %in% class(dataset[,var]) | 'character' %in% class(dataset[,var])){
+    ## Create table object of all possible levels, including missing
+    var.table <- as.data.frame(table(dataset[,var], useNA = 'ifany'))
+    
+    ## Calculate % of all records for missing level, and % of all non-missing records for others
+    var.table$prop <- with(var.table,
+                           ifelse(is.na(Var1), Freq / sum(Freq), Freq / sum(Freq[!is.na(Var1)])))
+    var.table$Var1 <- with(var.table, ifelse(is.na(Var1), 'No Data', as.character(Var1)))
+    var.table$npct <- with(var.table, paste0(round(prop*100), '% (', Freq, ')'))
+    
+    ## Order in decreasing order of frequency
+    var.table <- var.table[order(var.table$Freq, decreasing = TRUE),]
+    
+    ## Create final data frame: Var1 = missing or variable level; npct = % (N)
+    results.df <- rbind(subset(var.table, Var1 == 'No Data', select = c(Var1, npct)),
+                        c(rep('', 2)),
+                        subset(var.table, Var1 != 'No Data', select = c(Var1, npct)))
+    ## Numeric variable
+  } else{
+    ## Create summary() object and calculate SD
+    var.sum <- summary(dataset[,var])
+    var.sd <- sd(dataset[,var], na.rm = TRUE)
+    
+    ## Get number, % of records missing variable
+    var.miss <- ifelse("NA's" %in% names(var.sum), var.sum["NA's"], 0)
+    var.npct <- paste0(round((var.miss / nrow(dataset))*100), '% (', var.miss, ')')
+    
+    ## Create strings for median (IQR) and mean (SD)
+    var.mediqr <- paste0(var.sum['Median'], ' (', var.sum['1st Qu.'], ', ', var.sum['3rd Qu.'], ')')
+    var.meansd <- paste0(var.sum['Mean'], ' (', round(var.sd, 2), ')')
+    
+    ## Create final data frame: Var1=missing or type of descriptive stats; npct=% (N) or descriptives
+    results.df <- data.frame(Var1 = c('No Data', '', 'Median (IQR)', 'Mean (SD)'),
+                             npct = c(var.npct, '', var.mediqr, var.meansd))
+  }
+  
+  results.df <- cbind(rep(var, nrow(results.df)),
+                      rep(label(dataset[,var]), nrow(results.df)),
+                      results.df)
+  names(results.df) <- c('var', 'varlabel', 'descstat', 'stat')
+  
+  return(results.df)
+}
+
+## -- Functions to format results ------------------------------------------------------------------
+## Give data set dummy rownames to make beautiful in Latex
+space.rownames <- function(data.miss){
+  unlist(lapply(1:nrow(data.miss), FUN = function(i){ paste(rep(' ', i), collapse = '') }))
+}
+
+## Wrapper for latex()
+latex.missing <- function(data.miss){
+  latex(data.miss[,3:ncol(data.miss)], file = '',
+        title = '',
+        where = '!h',
+        rgroup = unique(data.miss$varlabel),
+        n.rgroup = as.data.frame(table(data.miss$varlabel))$Freq,
+        colheads = c('', ''),
+        col.just = c('l', 'r'),
+        longtable = TRUE)
+}
+
+## -- List of baseline risk factors ---------------------------------------------------------------
+baseline.vars <- c('age', 'gender', 'insurance.code', 'pt.marshall', 'pt.cerebral', 'pt.epidural',
+                   'iss', 'pt.injury', 'cpr.yn', 'base.motor', 'base.pupil.react', 'base.glucose',
+                   'base.hemoglobin', 'base.weight')
+
+## -- List of time-varying risk factors -----------------------------------------------------------
+varying.vars <- c('max.motor', 'pupil.react', 'min.glucose', 'min.hemoglobin', 'max.icp',
+                  'min.sodium', 'sofa.resp', 'sofa.cns', 'sofa.cv', 'sofa.liver', 'sofa.coag',
+                  'sofa.renal', 'tot.benzo', 'tot.opioid', 'tot.propofol', 'tot.dex', 'tot.antipsyc',
+                  'tot.betablock', 'tot.pento', 'tot.clonid', 'units.cryo', 'units.plasma',
+                  'units.platelets', 'units.prbc')
+
+## Shorten variable labels for benzos, opioids
+label(tbi.daily$tot.benzo) <- '24h benzodiazepines (midazolam equivalents)'
+label(tbi.daily$tot.opioid) <- '24h opioids (opioid equivalents)'
+
+## Missingness for delirium duration model
+deldur.miss <- do.call(rbind,
+                       lapply(c(baseline.vars, 'days.del'),
+                              FUN = describe.missing, dataset = tbi.oneobs))
+rownames(deldur.miss) <- space.rownames(deldur.miss)
+
+## Missingness for daily mental status, in-hospital death models (daily variables only)
+mental.miss <- do.call(rbind,
+                       lapply(c(varying.vars, 'mental.status'),
+                              FUN = describe.missing, dataset = tbi.daily))
+rownames(mental.miss) <- space.rownames(mental.miss)
+
+## Additional missingness for long-term mortality model
+death.miss <- do.call(rbind,
+                      lapply(c('disposition.coded', 'vent.days', 'time.death.dc'),
+                             FUN = describe.missing, dataset = tbi.oneobs))
+rownames(death.miss) <- space.rownames(death.miss)
+@
+
+\clearpage
+\subsection{Baseline Risk Factors}
+<<printmissdeldur, results = 'asis'>>=
+latex.missing(deldur.miss)
+@
+
+\clearpage
+\subsection{Time-Varying Risk Factors for Mental Status or Death}
+<<printmissmental, results = 'asis'>>=
+latex.missing(mental.miss)
+@
+
+\clearpage
+\subsection{In-Hospital Risk Factors for Long-Term Death}
+<<printmissdeath, results = 'asis'>>=
+latex.missing(death.miss)
+@
+
+\end{document}
