@@ -52,7 +52,18 @@ covariate.
 
 <<modmissing>>=
 ## -- Create function to calculate proportion of records missing data for each covariate -----------
-describe.missing <- function(dataset, var){
+describe.missing <- function(dataset, var, idlevel = TRUE, idvar = 'mrn'){
+
+  ## If desired, see how many subjects are missing all data for this variable
+  if(idlevel){
+    nsubj <- length(unique(dataset[,idvar]))
+    n.present <- aggregate(dataset[,var],
+                           by = list(dataset[,idvar]),
+                           FUN = function(x){ sum(!is.na(x)) })
+    n.subj.missing <- sum(n.present$x == 0)
+    npct.subj <- paste0(round((n.subj.missing / nsubj)*100), '% (', n.subj.missing, ')')
+  }
+
   ## Character/factor variable
   if('factor' %in% class(dataset[,var]) | 'character' %in% class(dataset[,var])){
     ## Create table object of all possible levels, including missing
@@ -61,17 +72,25 @@ describe.missing <- function(dataset, var){
     ## Calculate % of all records for missing level, and % of all non-missing records for others
     var.table$prop <- with(var.table,
                            ifelse(is.na(Var1), Freq / sum(Freq), Freq / sum(Freq[!is.na(Var1)])))
-    var.table$Var1 <- with(var.table, ifelse(is.na(Var1), 'No Data', as.character(Var1)))
+    var.table$Var1 <- with(var.table, {
+      ifelse(is.na(Var1), 'Records with No Data', as.character(Var1)) })
     var.table$npct <- with(var.table, paste0(round(prop*100), '% (', Freq, ')'))
     
     ## Order in decreasing order of frequency
     var.table <- var.table[order(var.table$Freq, decreasing = TRUE),]
     
     ## Create final data frame: Var1 = missing or variable level; npct = % (N)
-    results.df <- rbind(subset(var.table, Var1 == 'No Data', select = c(Var1, npct)),
-                        c(rep('', 2)),
-                        subset(var.table, Var1 != 'No Data', select = c(Var1, npct)))
-    ## Numeric variable
+    if(idlevel){
+      results.df <- rbind(subset(var.table, Var1 == 'Records with No Data', select = c(Var1, npct)),
+                          c('Patients with No Data', npct.subj),
+                          c(rep('', 2)),
+                          subset(var.table, Var1 != 'Records with No Data', select = c(Var1, npct)))
+    } else{
+      results.df <- rbind(subset(var.table, Var1 == 'Records with No Data', select = c(Var1, npct)),
+                          c(rep('', 2)),
+                          subset(var.table, Var1 != 'Records with No Data', select = c(Var1, npct)))
+    }
+  ## Numeric variable
   } else{
     ## Create summary() object and calculate SD
     var.sum <- summary(dataset[,var])
@@ -86,8 +105,14 @@ describe.missing <- function(dataset, var){
     var.meansd <- paste0(var.sum['Mean'], ' (', round(var.sd, 2), ')')
     
     ## Create final data frame: Var1=missing or type of descriptive stats; npct=% (N) or descriptives
-    results.df <- data.frame(Var1 = c('No Data', '', 'Median (IQR)', 'Mean (SD)'),
-                             npct = c(var.npct, '', var.mediqr, var.meansd))
+    if(idlevel){
+      results.df <- data.frame(Var1 = c('Records with No Data', 'Patients with No Data', '',
+                                        'Median (IQR)', 'Mean (SD)'),
+                               npct = c(var.npct, npct.subj, '', var.mediqr, var.meansd))
+    } else{
+      results.df <- data.frame(Var1 = c('Records with No Data', '', 'Median (IQR)', 'Mean (SD)'),
+                               npct = c(var.npct, '', var.mediqr, var.meansd))
+    }
   }
   
   results.df <- cbind(rep(var, nrow(results.df)),
@@ -135,7 +160,7 @@ label(tbi.daily$tot.opioid) <- '24h opioids (opioid equivalents)'
 ## Missingness for delirium duration model
 deldur.miss <- do.call(rbind,
                        lapply(c(baseline.vars, 'days.del'),
-                              FUN = describe.missing, dataset = tbi.oneobs))
+                              FUN = describe.missing, dataset = tbi.oneobs, idlevel = FALSE))
 rownames(deldur.miss) <- space.rownames(deldur.miss)
 
 ## Missingness for daily mental status, in-hospital death models (daily variables only)
@@ -147,7 +172,7 @@ rownames(mental.miss) <- space.rownames(mental.miss)
 ## Additional missingness for long-term mortality model
 death.miss <- do.call(rbind,
                       lapply(c('disposition.coded', 'vent.days', 'time.death.dc'),
-                             FUN = describe.missing, dataset = tbi.oneobs))
+                             FUN = describe.missing, dataset = tbi.oneobs, idlevel = FALSE))
 rownames(death.miss) <- space.rownames(death.miss)
 @
 
