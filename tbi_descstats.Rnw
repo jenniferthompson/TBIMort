@@ -159,7 +159,7 @@ label(tbi.daily$tot.opioid) <- '24h opioids (opioid equivalents)'
 
 ## Missingness for delirium duration model
 deldur.miss <- do.call(rbind,
-                       lapply(c(baseline.vars, 'days.del'),
+                       lapply(c(baseline.vars, 'days.del', 'dcfd.14'),
                               FUN = describe.missing, dataset = tbi.oneobs, idlevel = FALSE))
 rownames(deldur.miss) <- space.rownames(deldur.miss)
 

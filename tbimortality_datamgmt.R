@@ -189,11 +189,11 @@ daily.data$tot.dex <- with(daily.data, ifelse(is.na(drip.dex), 0, drip.dex))
 daily.data$tot.pento <- with(daily.data, ifelse(is.na(bolus.pento), 0, bolus.pento))
 daily.data$tot.clonid <- with(daily.data, ifelse(is.na(bolus.clonid), 0, bolus.clonid))
 
-## Blood products: convert from mL to units (mL not meaningful clinically)
-daily.data$units.prbc <- daily.data$tot.pbrc / 350
-daily.data$units.plasma <- daily.data$tot.plasma / 350
-daily.data$units.platelets <- daily.data$tot.platelets / 600
-daily.data$units.cryo <- daily.data$tot.cryo / 250
+## Blood products: convert from mL to units (mL not meaningful clinically); if no data, assume none
+daily.data$units.prbc <- with(daily.data, ifelse(is.na(tot.pbrc), 0, tot.pbrc / 350))
+daily.data$units.plasma <- with(daily.data, ifelse(is.na(tot.plasma), 0, tot.plasma / 350))
+daily.data$units.platelets <- with(daily.data, ifelse(tot.platelets, 0, tot.platelets / 600))
+daily.data$units.cryo <- with(daily.data, ifelse(is.na(tot.cryo), 0, tot.cryo / 250))
 
 ## -- Data management for demographic/summary data -------------------------------------------------
 demog.data$pt.admit <- as.Date(demog.data$pt.admit, format = '%Y-%m-%d')
@@ -239,6 +239,18 @@ mental.vars <- daily.data %>%
             days.coma = ifelse(days.mental == 0, NA,
                                sum(mental.status == 'Comatose', na.rm = TRUE)))
 
+## DCFDs over the first 14 days after admission
+dcfd.data <- daily.data %>%
+  filter(redcap.event.name %in%
+           paste('Inpatient Day',
+                 c('01', '02', '03', '04', '05', '06', '07', '08', '09', '10', '11', '12',
+                   '13', '14'))) %>%
+  group_by(mrn) %>%
+  summarise(days.mental.14 = sum(!is.na(mental.status)),
+            dcfd.14 = ifelse(days.mental.14 == 0, NA,
+                             14 - sum(mental.status %in% c('Delirious', 'Comatose'),
+                                      na.rm = TRUE)))
+
 ## -- Demographic data management ------------------------------------------------------------------
 demog.data$race2 <- f.relevel(demog.data$race, 'White')
 demog.data$gender <- f.relevel(demog.data$gender, 'Male')
@@ -253,6 +265,7 @@ demog.data$hosp.death <- f.relevel(demog.data$hosp.death, 'No')
 demog.data$final.death <- f.relevel(demog.data$final.death, 'No')
 
 ## -- Create analysis data sets --------------------------------------------------------------------
+## Use age filter to remove patients with only pupil reactivity data; some sort of weirdness there
 tbi.oneobs <- subset(demog.data,
                      select = c(mrn, age, gender, race, insurance.code, iss, cpr.yn, pt.marshall,
                                 pt.cerebral, pt.cerebral.na, pt.epidural, pt.epidural.na, pt.injury,
@@ -260,7 +273,9 @@ tbi.oneobs <- subset(demog.data,
                                 time.death.inhosp, time.death.dc, died.3yr, time.death.3yr,
                                 time.death.ever)) %>%
   left_join(day00.data, by = 'mrn') %>%
-  left_join(mental.vars, by = 'mrn')
+  left_join(mental.vars, by = 'mrn') %>%
+  left_join(select(dcfd.data, mrn, dcfd.14), by = 'mrn') %>%
+  filter(!is.na(age))
 
 label(tbi.oneobs$mrn) <- 'Medical record number'
 label(tbi.oneobs$age) <- 'Age at admission'
@@ -294,8 +309,10 @@ label(tbi.oneobs$n.recs) <- 'Number of daily records'
 label(tbi.oneobs$days.mental) <- 'Days with mental status info'
 label(tbi.oneobs$days.del) <- 'Days of delirium'
 label(tbi.oneobs$days.coma) <- 'Days of coma'
+label(tbi.oneobs$dcfd.14) <- 'DCFDs within 14 days of admission'
 
 tbi.daily <- subset(daily.data,
+                    mrn %in% tbi.oneobs$mrn,
                     select = c(mrn, redcap.event.name, mental.status, max.motor, pupil.react,
                                min.glucose, min.hemoglobin, min.sodium, max.icp,
                                sofa.resp, sofa.cns, sofa.cv, sofa.liver, sofa.coag, sofa.renal,
