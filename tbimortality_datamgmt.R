@@ -192,7 +192,7 @@ daily.data$tot.clonid <- with(daily.data, ifelse(is.na(bolus.clonid), 0, bolus.c
 ## Blood products: convert from mL to units (mL not meaningful clinically); if no data, assume none
 daily.data$units.prbc <- with(daily.data, ifelse(is.na(tot.pbrc), 0, tot.pbrc / 350))
 daily.data$units.plasma <- with(daily.data, ifelse(is.na(tot.plasma), 0, tot.plasma / 350))
-daily.data$units.platelets <- with(daily.data, ifelse(tot.platelets, 0, tot.platelets / 600))
+daily.data$units.platelets <- with(daily.data, ifelse(is.na(tot.platelets), 0, tot.platelets / 600))
 daily.data$units.cryo <- with(daily.data, ifelse(is.na(tot.cryo), 0, tot.cryo / 250))
 
 ## -- Data management for demographic/summary data -------------------------------------------------
