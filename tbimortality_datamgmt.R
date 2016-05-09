@@ -159,8 +159,8 @@ daily.data$tot.benzo <- rowSums(daily.data[,benzo.components], na.rm = TRUE)
 daily.data$bolus.hydromorph.fent <- (daily.data$bolus.hydromorph / 7.5) * 1000
 daily.data$drip.hydromorph.fent <- (daily.data$drip.hydromorph / 7.5) * 1000
 daily.data$drip.morph.fent <- (daily.data$drip.morph / 50) * 1000
-daily.data$bolus.hydrocod.fent <- (daily.data$bolus.hydrocod * 5 / 16.7) * 1000
-daily.data$bolus.metha.fent <- (daily.data$bolus.metha * 15 / 122.1) * 1000
+daily.data$bolus.hydrocod.fent <- (daily.data$bolus.hydrocod * 16.7) / 5
+daily.data$bolus.metha.fent <- (daily.data$bolus.metha * 122.1) / 15
 daily.data$bolus.remi.fent <- daily.data$bolus.remi / 1.2
 
 opioid.components <- c('bolus.fent', 'drip.fent', 'bolus.hydromorph.fent', 'drip.hydromorph.fent',
