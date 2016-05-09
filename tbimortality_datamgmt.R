@@ -2,6 +2,7 @@
 ## Create analysis data set for TBI/mortality analyses
 ####################################################################################################
 
+library(Hmisc)
 library(dplyr) ## used for easy summarizing for outcome variables
 
 ## Function to take a variable with "Missing" as an option and recode as NA
@@ -142,23 +143,29 @@ daily.data$sofa.mod.nanormal <- rowSums(daily.data[,sofa.mod.comps], na.rm = TRU
 daily.data$sofa.mod.namissing <- rowSums(daily.data[,sofa.mod.comps], na.rm = FALSE)
 
 ## Drug variables ##
-## Benzos
+## Benzos, in midazolam equivalents
 daily.data$bolus.loraz.midaz <- daily.data$bolus.loraz * 2.5
 daily.data$drip.loraz.midaz <- daily.data$drip.loraz * 2.5
 daily.data$bolus.diaz.midaz <- daily.data$bolus.diaz / 2
+daily.data$bolus.alpra.midaz <- daily.data$bolus.alpra / 4
+daily.data$bolus.clonaz.midaz <- daily.data$bolus.clonaz / 2
 
 benzo.components <- c('bolus.midaz', 'drip.midaz', 'bolus.loraz.midaz', 'drip.loraz.midaz',
-                      'bolus.diaz.midaz')
+                      'bolus.diaz.midaz', 'bolus.alpra.midaz', 'bolus.clonaz.midaz')
 
 daily.data$tot.benzo <- rowSums(daily.data[,benzo.components], na.rm = TRUE)
 
-## Opioids
+## Opioids, in fentanyl equivalents
 daily.data$bolus.hydromorph.fent <- (daily.data$bolus.hydromorph / 7.5) * 1000
 daily.data$drip.hydromorph.fent <- (daily.data$drip.hydromorph / 7.5) * 1000
 daily.data$drip.morph.fent <- (daily.data$drip.morph / 50) * 1000
+daily.data$bolus.hydrocod.fent <- (daily.data$bolus.hydrocod * 5 / 16.7) * 1000
+daily.data$bolus.metha.fent <- (daily.data$bolus.metha * 15 / 122.1) * 1000
+daily.data$bolus.remi.fent <- daily.data$bolus.remi / 1.2
 
 opioid.components <- c('bolus.fent', 'drip.fent', 'bolus.hydromorph.fent', 'drip.hydromorph.fent',
-                       'drip.morph.fent')
+                       'drip.morph.fent', 'bolus.hydrocod.fent', 'bolus.metha.fent',
+                       'bolus.remi.fent')
 
 daily.data$tot.opioid <- rowSums(daily.data[,opioid.components], na.rm = TRUE)
 
@@ -174,7 +181,7 @@ antipsyc.components <- c('bolus.halop', 'halop.olanz', 'halop.quet', 'halop.risp
 
 daily.data$tot.antipsyc <- rowSums(daily.data[,antipsyc.components], na.rm = TRUE)
 
-## Total beta blockers
+## Total beta blockers, in metoprolol equivalents
 daily.data$beta.propran <- daily.data$bolus.propran * 1.25
 daily.data$beta.labet <- daily.data$bolus.labet * 0.5
 daily.data$beta.esmo <- (daily.data$drip.esmo / 1000) / 10
