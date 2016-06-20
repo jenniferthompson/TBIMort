@@ -1,0 +1,310 @@
+%% -- Specially formatted Latex comment tells RStudio to compile PDF with knitr
+% !Rnw weave = knitr
+
+\documentclass{article}
+
+\usepackage{setspace, relsize}
+\usepackage{longtable}
+\usepackage[margin = 0.425in]{geometry}
+\usepackage{hyperref}
+
+\title{Patients with and without Mental Status Data, TBI Cohort}
+\date{\today}
+
+\begin{document}
+
+<<setup, echo = FALSE>>=
+opts_chunk$set(echo=FALSE, results='hide', warning=FALSE, message=FALSE, cache=FALSE, error=FALSE)
+options(replace.assign = TRUE, width = 90)
+@
+
+<<prelim>>=
+## Load libraries
+library(Hmisc)
+library(ggplot2)
+
+load(file.path('AnalysisData', 'tbi_datasets.Rdata'))
+
+## -- Shorten levels of categorical variables -------------------------------------------------------
+levels(tbi.oneobs$gender) <- c('M', 'F')
+tbi.oneobs$race <- with(tbi.oneobs, factor(ifelse(is.na(race), NA,
+                                           ifelse(race == 'White', 1,
+                                           ifelse(race == 'Black', 2,
+                                           ifelse(race == 'Hispanic', 3,
+                                           ifelse(race == 'Other', 4, 5))))),
+                                           levels = 1:5,
+                                           labels = c('W', 'B', 'H', 'O', 'Unk')))
+label(tbi.oneobs$race) <- 'Race'
+
+levels(tbi.oneobs$insurance.code) <- c('Priv', 'Pub', 'Self', 'WC')
+levels(tbi.oneobs$cpr.yn) <- c('No', 'Yes')
+levels(tbi.oneobs$pt.marshall) <- gsub('Marshall Class ', '', levels(tbi.oneobs$pt.marshall))
+levels(tbi.oneobs$pt.cerebral) <- levels(tbi.oneobs$pt.epidural) <- c('N', 'Y', 'Miss')
+levels(tbi.oneobs$pt.injury) <- c('Bl', 'Pen', 'Miss')
+levels(tbi.oneobs$disposition.coded) <- c('Home', 'Rehab', 'Died', 'LTAC', 'Nurse',
+                                          'Jail', 'Psych', 'Hospice', 'Trans')
+levels(tbi.oneobs$base.pupil.react) <- c('Fixed', 'Mix', 'React')
+
+## -- Multiplot function ---------------------------------------------------------------------------
+multiplot <- function(..., plotlist=NULL, file, cols=1, layout=NULL) {
+  library(grid)
+
+  # Make a list from the ... arguments and plotlist
+  plots <- c(list(...), plotlist)
+
+  numPlots = length(plots)
+
+  # If layout is NULL, then use 'cols' to determine layout
+  if (is.null(layout)) {
+    # Make the panel
+    # ncol: Number of columns of plots
+    # nrow: Number of rows needed, calculated from # of cols
+    layout <- matrix(seq(1, cols * ceiling(numPlots/cols)),
+                    ncol = cols, nrow = ceiling(numPlots/cols))
+  }
+
+ if (numPlots==1) {
+    print(plots[[1]])
+
+  } else {
+    # Set up the page
+    grid.newpage()
+    pushViewport(viewport(layout = grid.layout(nrow(layout), ncol(layout))))
+
+    # Make each plot, in the correct location
+    for (i in 1:numPlots) {
+      # Get the i,j matrix positions of the regions that contain this subplot
+      matchidx <- as.data.frame(which(layout == i, arr.ind = TRUE))
+
+      print(plots[[i]], vp = viewport(layout.pos.row = matchidx$row,
+                                      layout.pos.col = matchidx$col))
+    }
+  }
+}
+@
+
+
+\section{Baseline and Summary Variables}
+
+<<baselinedesc>>=
+## -- Create indicator variable for has any mental status vs. no days with mental status -----------
+tbi.oneobs$ever.mental <- with(tbi.oneobs, factor(ifelse(is.na(days.mental), NA,
+                                                  ifelse(days.mental > 0, 1, 2)),
+                                                  levels = 1:2,
+                                                  labels = c('>=1 day mental status',
+                                                             'No days mental status')))
+
+## -- Function to calculate proportions by mental status group -------------------------------------
+## Get Ns to divide by
+denom.data <- as.data.frame(table(tbi.oneobs$ever.mental))
+names(denom.data) <- c('ever.mental', 'mental.denom')
+
+calc.prop.data.oneobs <- function(xvar, inc.missing = TRUE){
+  if(inc.missing){
+    na.inc <- 'always'
+  } else{
+    na.inc <- 'no'
+  }
+
+  prop.data <- eval(parse(text = paste0("with(tbi.oneobs, as.data.frame(table(ever.mental,",
+                                        xvar, ", useNA = '", na.inc, "')))")))
+  prop.data <- subset(prop.data, !is.na(ever.mental))
+
+  prop.data <- merge(prop.data, denom.data, by = 'ever.mental')
+  prop.data$prop <- with(prop.data, Freq / mental.denom)
+
+  prop.data
+}
+
+## -- Function to plot histogram or barplot, depending on # levels of xvar --------------------------
+plot.dist.oneobs <- function(xvar){
+  use.bar <- is.factor(tbi.oneobs[,xvar]) |
+               is.character(tbi.oneobs[,xvar]) |
+               length(unique(tbi.oneobs[,xvar])) < 5
+
+  if(use.bar){
+    ## Calculate proportions
+    xvar.data <- calc.prop.data.oneobs(xvar)
+
+    ## If no missing data, remove those rows
+    if(sum(is.na(xvar.data[,xvar])) > 0){
+      if(sum(xvar.data[is.na(xvar.data[,xvar]), 'Freq']) == 0){
+        xvar.data <- xvar.data[!is.na(xvar.data[,xvar]),]
+      }
+    }
+
+    xvar.plot <- ggplot(data = xvar.data, aes_string(x = xvar, y = 'prop')) +
+      geom_bar(aes(fill = ever.mental), position = 'dodge', stat = 'identity', alpha = 0.7) +
+      scale_fill_manual(values = c('darkorange2', 'turquoise4'), guide = FALSE) +
+      scale_y_continuous(name = 'Proportion of Patients',
+                         limits = c(0, 1),
+                         breaks = seq(0, 1, 0.2)) +
+      theme(axis.text.x = element_text(angle = 60, hjust = 1, size = 7))
+  } else{
+    xvar.plot <- ggplot(data = tbi.oneobs, aes_string(x = xvar, '..density..')) +
+      geom_histogram(data = subset(tbi.oneobs, ever.mental == '>=1 day mental status'),
+                     fill = 'darkorange2', alpha = 0.5) +
+      geom_histogram(data = subset(tbi.oneobs, ever.mental == 'No days mental status'),
+                     fill = 'turquoise4', alpha = 0.5) +
+      # facet_wrap(~ ever.mental) +
+      ylab('Density') + theme(axis.text.x = element_text(size = 7))
+  }
+
+  xvar.plot +
+    theme(axis.title = element_text(size = 8),
+          axis.text.y = element_text(size = 7))
+}
+
+## -- Create plots for all variables in tbi.oneobs -------------------------------------------------
+describe.vars <- setdiff(names(tbi.oneobs),
+                         c('mrn', 'days.mental', 'days.del', 'days.coma', 'dcfd.14', 'ever.mental',
+                           'pt.cerebral.na', 'pt.epidural.na', 'pt.injury.na'))
+
+oneobs.plotlist <- lapply(describe.vars, FUN = plot.dist.oneobs)
+
+oneobs.summary.1 <- summaryM(formula = as.formula(paste(paste(describe.vars[1:13], collapse = ' + '),
+                                          '~ ever.mental')),
+                             data = tbi.oneobs)
+
+oneobs.summary.2 <-
+  summaryM(formula = as.formula(paste(paste(describe.vars[14:26], collapse = ' + '),
+                                      '~ ever.mental')),
+           data = tbi.oneobs)
+
+
+@
+
+In all plots, orange = patients with at least one day of mental status recorded; blue = patients
+with no days of mental status.
+
+<<oneobstable, results = 'asis'>>=
+latex(oneobs.summary.1,
+      file = '',
+      where = '!h', digits = 2, what = '%', npct = 'both', long = TRUE, exclude1 = FALSE,
+      prmsd = TRUE)
+
+latex(oneobs.summary.2,
+      file = '',
+      where = '!h', digits = 2, what = '%', npct = 'both', long = TRUE, exclude1 = FALSE,
+      prmsd = TRUE)
+
+@
+
+\clearpage
+<<printoneobsplots, results = 'asis', fig.align='center', fig.width=7.5, fig.height=10>>=
+multiplot(plotlist = oneobs.plotlist[1:10], layout = matrix(1:10, ncol = 2))
+multiplot(plotlist = oneobs.plotlist[11:18], layout = matrix(1:8, ncol = 2))
+multiplot(plotlist = oneobs.plotlist[19:25], layout = matrix(c(1:7, NA), ncol = 2))
+
+@
+
+\section{Daily Variables}
+
+<<dailydesc>>=
+## -- Create indicator variable for has mental status today vs. no with mental status --------------
+tbi.daily$has.mental <- with(tbi.daily, factor(ifelse(is.na(mental.status), 2, 1),
+                                               levels = 1:2,
+                                               labels = c('Has mental status', 'No mental status')))
+
+## -- Function to calculate proportions by mental status group -------------------------------------
+## Get Ns to divide by
+denom.data.daily <- as.data.frame(table(tbi.daily$has.mental))
+names(denom.data.daily) <- c('has.mental', 'mental.denom')
+
+calc.prop.data.daily <- function(xvar, inc.missing = TRUE){
+  if(inc.missing){
+    na.inc <- 'always'
+  } else{
+    na.inc <- 'no'
+  }
+
+  prop.data <- eval(parse(text = paste0("with(tbi.daily, as.data.frame(table(has.mental,",
+                                        xvar, ", useNA = '", na.inc, "')))")))
+  prop.data <- subset(prop.data, !is.na(has.mental))
+
+  prop.data <- merge(prop.data, denom.data.daily, by = 'has.mental')
+  prop.data$prop <- with(prop.data, Freq / mental.denom)
+
+  prop.data
+}
+
+## -- Function to plot histogram or barplot, depending on # levels of xvar --------------------------
+plot.dist.daily <- function(xvar){
+  use.bar <- is.factor(tbi.daily[,xvar]) |
+               is.character(tbi.daily[,xvar]) |
+               length(unique(tbi.daily[,xvar])) < 5
+
+  if(use.bar){
+    ## Calculate proportions
+    xvar.data <- calc.prop.data.daily(xvar)
+
+    ## If no missing data, remove those rows
+    if(sum(is.na(xvar.data[,xvar])) > 0){
+      if(sum(xvar.data[is.na(xvar.data[,xvar]), 'Freq']) == 0){
+        xvar.data <- xvar.data[!is.na(xvar.data[,xvar]),]
+      }
+    }
+
+    xvar.plot <- ggplot(data = xvar.data, aes_string(x = xvar, y = 'prop')) +
+      geom_bar(aes(fill = has.mental), position = 'dodge', stat = 'identity', alpha = 0.7) +
+      scale_fill_manual(values = c('darkorange2', 'turquoise4'), guide = FALSE) +
+      scale_y_continuous(name = 'Proportion of Days',
+                         limits = c(0, 1),
+                         breaks = seq(0, 1, 0.2)) +
+      theme(axis.text.x = element_text(angle = 60, hjust = 1, size = 7))
+  } else{
+    xvar.plot <- ggplot(data = tbi.daily, aes_string(x = xvar, '..density..')) +
+      geom_histogram(data = subset(tbi.daily, has.mental == 'Has mental status'),
+                     fill = 'darkorange2', alpha = 0.5) +
+      geom_histogram(data = subset(tbi.daily, has.mental == 'No mental status'),
+                     fill = 'turquoise4', alpha = 0.5) +
+      ylab('Density') + theme(axis.text.x = element_text(size = 7))
+  }
+
+  xvar.plot +
+    theme(axis.title = element_text(size = 8),
+          axis.text.y = element_text(size = 7))
+}
+
+## -- Create plots for all variables in tbi.oneobs -------------------------------------------------
+describe.vars.daily <- setdiff(names(tbi.daily), c('mrn', 'event', 'mental.status', 'has.mental'))
+
+daily.plotlist <- lapply(describe.vars.daily, FUN = plot.dist.daily)
+
+daily.summary.1 <- summaryM(formula = as.formula(paste(paste(describe.vars.daily[1:14],
+                                                             collapse = ' + '),
+                                                       '~ has.mental')),
+                             data = tbi.daily)
+
+daily.summary.2 <-
+  summaryM(formula = as.formula(paste(paste(describe.vars.daily[15:28], collapse = ' + '),
+                                      '~ has.mental')),
+           data = tbi.daily)
+
+
+@
+
+In all plots, orange = patients with mental status recorded; blue = patients with no mental status.
+
+<<dailytable, results = 'asis'>>=
+latex(daily.summary.1,
+      file = '',
+      where = '!h', digits = 2, what = '%', npct = 'both', long = TRUE, exclude1 = FALSE,
+      prmsd = TRUE)
+
+latex(daily.summary.2,
+      file = '',
+      where = '!h', digits = 2, what = '%', npct = 'both', long = TRUE, exclude1 = FALSE,
+      prmsd = TRUE, size = 'footnotesize')
+
+@
+
+\clearpage
+<<printdailyplots, results = 'asis', fig.align='center', fig.width=7.5, fig.height=10>>=
+multiplot(plotlist = daily.plotlist[1:10], layout = matrix(1:10, ncol = 2))
+multiplot(plotlist = daily.plotlist[11:20], layout = matrix(1:10, ncol = 2))
+multiplot(plotlist = daily.plotlist[21:28], layout = matrix(1:8, ncol = 2))
+
+@
+
+\end{document}
