@@ -276,9 +276,9 @@ demog.data$final.death <- f.relevel(demog.data$final.death, 'No')
 tbi.oneobs <- subset(demog.data,
                      select = c(mrn, age, gender, race, insurance.code, iss, cpr.yn, pt.marshall,
                                 pt.cerebral, pt.cerebral.na, pt.epidural, pt.epidural.na, pt.injury,
-                                pt.injury.na, vent.days, disposition.coded, fim.total, hosp.death,
-                                time.death.inhosp, time.death.dc, died.3yr, time.death.3yr,
-                                time.death.ever)) %>%
+                                pt.injury.na, vent.days, disposition.coded, fim.total, icu.los,
+                                hosp.death, time.death.inhosp, time.death.dc, died.3yr,
+                                time.death.3yr, time.death.ever)) %>%
   left_join(day00.data, by = 'mrn') %>%
   left_join(mental.vars, by = 'mrn') %>%
   left_join(select(dcfd.data, mrn, dcfd.14), by = 'mrn') %>%
@@ -301,6 +301,7 @@ label(tbi.oneobs$pt.injury.na) <- 'Injury type (unknown = NA)'
 label(tbi.oneobs$vent.days) <- 'Ventilator days'
 label(tbi.oneobs$disposition.coded) <- 'Discharge disposition'
 label(tbi.oneobs$fim.total) <- 'FIM total score'
+label(tbi.oneobs$icu.los) <- 'ICU LOS'
 label(tbi.oneobs$hosp.death) <- 'Died in hospital'
 label(tbi.oneobs$time.death.inhosp) <- 'Days to in-hospital death'
 label(tbi.oneobs$time.death.dc) <- 'Hospital LOS (days to in-hospital death or discharge)'
@@ -365,4 +366,4 @@ label(tbi.daily$units.cryo) <- 'Units of cryoprecipitate given (mL/250)'
 ## Save date that analysis data sets were created
 datasets.created.at <- Sys.time()
 
-save(tbi.oneobs, tbi.daily, datasets.created.at, file = 'tbi_datasets.Rdata')
+save(tbi.oneobs, tbi.daily, datasets.created.at, file = 'AnalysisData/tbi_datasets.Rdata')
