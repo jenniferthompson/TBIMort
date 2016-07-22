@@ -29,29 +29,21 @@ names(infusion.data) <- gsub('_', '.', names(infusion.data), fixed = TRUE)
 ## -- Merge MR data and drug drip data for calculating drug totals ---------------------------------
 daily.data <- merge(mr.data, infusion.data, by = c('mrn', 'redcap.event.name'), all = TRUE)
 
+## -- Add weight at baseline to daily data for use in SOFA CV, drug calculations -------------------
+base.wt.data <- subset(daily.data,
+                       redcap.event.name == 'Inpatient Day 00',
+                       select = c(mrn, med.wt.encounter))
+names(base.wt.data) <- c('mrn', 'base.weight')
+daily.data <- merge(daily.data, base.wt.data, by = 'mrn')
+
 ## -- Derive necessary variables using daily data --------------------------------------------------
 ## Pupil reactivity
-## Double check this once Maddie is done entering data; currently left pupil has 23% missingness
-##  but right pupil has nearly 99%!
 daily.data$n.pupil.react <-
   ifelse(rowSums(!is.na(daily.data[,c('l.pupil.day', 'r.pupil.day')])) == 0, NA,
          rowSums(daily.data[,c('l.pupil.day', 'r.pupil.day')] == 'Reactive', na.rm = TRUE))
 daily.data$pupil.react <- factor(daily.data$n.pupil.react,
                                  levels = 0:2,
                                  labels = c('Both fixed', 'One reactive', 'Both reactive'))
-
-## -- Get baseline MR variables from day 00 (need pupil reactivity) --------------------------------
-day00.data <- subset(daily.data,
-                     redcap.event.name == 'Inpatient Day 00',
-                     select = c(mrn, med.wt.encounter, max.motor, min.glucose, min.hemoglobin,
-                                pupil.react))
-names(day00.data) <- c('mrn', 'base.weight', 'base.motor', 'base.glucose', 'base.hemoglobin',
-                       'base.pupil.react')
-
-## Merge baseline weight back onto daily data for use in drug scaling
-daily.data <- merge(daily.data,
-                    subset(day00.data, select = c(mrn, base.weight)),
-                    by = 'mrn', all.x = TRUE, all.y = FALSE)
 
 ## Mental status:
 ## coma = minimum RASS = -5 or -4
@@ -130,79 +122,7 @@ daily.data$sofa.renal <- with(daily.data, {
   ifelse(!is.na(max.creatinine) & max.creatinine >= 2, 2,
   ifelse(!is.na(max.creatinine) & max.creatinine >= 1.2, 1, 0))))) })
 
-## Calculate overall and modified SOFA; two versions of each:
-## - missing component data assumed to be normal
-## - missing component data considered missing
-sofa.comps <- paste0('sofa.', c('resp', 'cns', 'cv', 'liver', 'coag', 'renal'))
-sofa.mod.comps <- setdiff(sofa.comps, 'sofa.cns')
-
-daily.data$sofa.nanormal <- rowSums(daily.data[,sofa.comps], na.rm = TRUE)
-daily.data$sofa.namissing <- rowSums(daily.data[,sofa.comps], na.rm = FALSE)
-
-daily.data$sofa.mod.nanormal <- rowSums(daily.data[,sofa.mod.comps], na.rm = TRUE)
-daily.data$sofa.mod.namissing <- rowSums(daily.data[,sofa.mod.comps], na.rm = FALSE)
-
-## Drug variables ##
-## Benzos, in midazolam equivalents
-daily.data$bolus.loraz.midaz <- daily.data$bolus.loraz * 2.5
-daily.data$drip.loraz.midaz <- daily.data$drip.loraz * 2.5
-daily.data$bolus.diaz.midaz <- daily.data$bolus.diaz / 2
-daily.data$bolus.alpra.midaz <- daily.data$bolus.alpra / 4
-daily.data$bolus.clonaz.midaz <- daily.data$bolus.clonaz / 2
-
-benzo.components <- c('bolus.midaz', 'drip.midaz', 'bolus.loraz.midaz', 'drip.loraz.midaz',
-                      'bolus.diaz.midaz', 'bolus.alpra.midaz', 'bolus.clonaz.midaz')
-
-daily.data$tot.benzo <- rowSums(daily.data[,benzo.components], na.rm = TRUE)
-
-## Opioids, in fentanyl equivalents
-daily.data$bolus.hydromorph.fent <- (daily.data$bolus.hydromorph / 7.5) * 1000
-daily.data$drip.hydromorph.fent <- (daily.data$drip.hydromorph / 7.5) * 1000
-daily.data$drip.morph.fent <- (daily.data$drip.morph / 50) * 1000
-daily.data$bolus.hydrocod.fent <- (daily.data$bolus.hydrocod * 16.7) / 5
-daily.data$bolus.metha.fent <- (daily.data$bolus.metha * 122.1) / 15
-daily.data$bolus.remi.fent <- daily.data$bolus.remi / 1.2
-
-opioid.components <- c('bolus.fent', 'drip.fent', 'bolus.hydromorph.fent', 'drip.hydromorph.fent',
-                       'drip.morph.fent', 'bolus.hydrocod.fent', 'bolus.metha.fent',
-                       'bolus.remi.fent')
-
-daily.data$tot.opioid <- rowSums(daily.data[,opioid.components], na.rm = TRUE)
-
-## Total antipsychotics: use regression formulas in Table 3 of Andreasen et al,
-##  Biological Psychiatry, vol 67 issue 3 1 Feb 2010, to get haloperidol equivalents
-##  http://www.sciencedirect.com/science/article/pii/S0006322309011251
-daily.data$halop.olanz <- (daily.data$bolus.olanz / 2.9)^(1 / 0.805)
-daily.data$halop.quet <- (daily.data$bolus.quet / 88.16)^(1 / 0.786)
-daily.data$halop.risp <- (daily.data$bolus.risp / 0.79)^(1 / 0.851)
-daily.data$halop.zipras <- (daily.data$bolus.zipras / 35.59)^(1 / 0.578)
-
-antipsyc.components <- c('bolus.halop', 'halop.olanz', 'halop.quet', 'halop.risp', 'halop.zipras')
-
-daily.data$tot.antipsyc <- rowSums(daily.data[,antipsyc.components], na.rm = TRUE)
-
-## Total beta blockers, in metoprolol equivalents
-daily.data$beta.propran <- daily.data$bolus.propran * 1.25
-daily.data$beta.labet <- daily.data$bolus.labet * 0.5
-daily.data$beta.esmo <- (daily.data$drip.esmo / 1000) / 10
-
-betablock.components <- c('bolus.metop', 'beta.propran', 'beta.labet', 'beta.esmo')
-
-daily.data$tot.betablock <- rowSums(daily.data[,betablock.components], na.rm = TRUE)
-
-## For single-variable drugs, create new variable that is 0 if no dose noted
-daily.data$tot.propofol <- with(daily.data, ifelse(is.na(drip.propofol), 0, drip.propofol))
-daily.data$tot.dex <- with(daily.data, ifelse(is.na(drip.dex), 0, drip.dex))
-daily.data$tot.pento <- with(daily.data, ifelse(is.na(bolus.pento), 0, bolus.pento))
-daily.data$tot.clonid <- with(daily.data, ifelse(is.na(bolus.clonid), 0, bolus.clonid))
-
-## Blood products: convert from mL to units (mL not meaningful clinically); if no data, assume none
-daily.data$units.prbc <- with(daily.data, ifelse(is.na(tot.pbrc), 0, tot.pbrc / 350))
-daily.data$units.plasma <- with(daily.data, ifelse(is.na(tot.plasma), 0, tot.plasma / 350))
-daily.data$units.platelets <- with(daily.data, ifelse(is.na(tot.platelets), 0, tot.platelets / 600))
-daily.data$units.cryo <- with(daily.data, ifelse(is.na(tot.cryo), 0, tot.cryo / 250))
-
-## -- Function to impute closest daily value within X days before/after a missing date -------------
+## -- Impute closest value within X days before/after a missing date for several covariates --------
 ## Create numeric variable for study day
 daily.data$study.day <- as.numeric(gsub('Inpatient Day ', '', daily.data$redcap.event.name))
 
@@ -266,8 +186,8 @@ impute.closest <- function(dataset, ## data set to use - assumes all records are
 }
 
 ## New data frame for each imputed variable
-impute.2days <- c('max.motor', 'pupil.react', 'min.glucose', 'min.hemoglobin',
-                  'sofa.resp', 'sofa.cv', 'sofa.liver', 'sofa.coag', 'sofa.renal')
+impute.2days <- c('max.motor', 'pupil.react', 'min.glucose', 'min.hemoglobin', 'min.sodium',
+                  'sofa.resp', 'sofa.cns', 'sofa.cv', 'sofa.liver', 'sofa.coag', 'sofa.renal')
 
 ## List of separate data frames split by ID, sorted by date
 daily.data <- daily.data[order(daily.data$mrn, daily.data$study.day),]
@@ -285,7 +205,7 @@ imputed.daily <- lapply(impute.2days, FUN = function(impvar){
   lapply(daily.data.mrn, FUN = impute.var, impvar = impvar)
 })
 
-system.time(imputed.daily.rbind <- lapply(imputed.daily, FUN = function(i){ do.call(rbind, i) }))
+imputed.daily.rbind <- lapply(imputed.daily, FUN = function(i){ do.call(rbind, i) })
 ## rbind is faster
 # system.time(imputed.daily.unsplit <- lapply(imputed.daily, FUN = function(i){ unsplit(i, daily.data$mrn) }))
 
@@ -298,6 +218,78 @@ daily.data <- cbind(daily.data, imputed.daily.cbind)
 daily.data$pupil.react.imp <- factor(daily.data$pupil.react.imp - 1,
                                      levels = 0:2,
                                      labels = c('Both fixed', 'One reactive', 'Both reactive'))
+
+## Calculate overall and modified SOFA; two versions of each:
+## - missing component data assumed to be normal
+## - missing component data considered missing
+sofa.comps <- paste0('sofa.', c('resp', 'cns', 'cv', 'liver', 'coag', 'renal'))
+sofa.mod.comps <- setdiff(sofa.comps, 'sofa.cns')
+
+daily.data$sofa.nanormal <- rowSums(daily.data[,sofa.comps], na.rm = TRUE)
+daily.data$sofa.namissing <- rowSums(daily.data[,sofa.comps], na.rm = FALSE)
+
+daily.data$sofa.mod.nanormal <- rowSums(daily.data[,sofa.mod.comps], na.rm = TRUE)
+daily.data$sofa.mod.namissing <- rowSums(daily.data[,sofa.mod.comps], na.rm = FALSE)
+
+## Drug variables - can be done separately from imputation, because we assume no data = dose of 0 ##
+## Benzos, in midazolam equivalents
+daily.data$bolus.loraz.midaz <- daily.data$bolus.loraz * 2.5
+daily.data$drip.loraz.midaz <- daily.data$drip.loraz * 2.5
+daily.data$bolus.diaz.midaz <- daily.data$bolus.diaz / 2
+daily.data$bolus.alpra.midaz <- daily.data$bolus.alpra / 4
+daily.data$bolus.clonaz.midaz <- daily.data$bolus.clonaz / 2
+
+benzo.components <- c('bolus.midaz', 'drip.midaz', 'bolus.loraz.midaz', 'drip.loraz.midaz',
+                      'bolus.diaz.midaz', 'bolus.alpra.midaz', 'bolus.clonaz.midaz')
+
+daily.data$tot.benzo <- rowSums(daily.data[,benzo.components], na.rm = TRUE)
+
+## Opioids, in fentanyl equivalents
+daily.data$bolus.hydromorph.fent <- (daily.data$bolus.hydromorph / 7.5) * 1000
+daily.data$drip.hydromorph.fent <- (daily.data$drip.hydromorph / 7.5) * 1000
+daily.data$drip.morph.fent <- (daily.data$drip.morph / 50) * 1000
+daily.data$bolus.hydrocod.fent <- (daily.data$bolus.hydrocod * 16.7) / 5
+daily.data$bolus.metha.fent <- (daily.data$bolus.metha * 122.1) / 15
+daily.data$bolus.remi.fent <- daily.data$bolus.remi / 1.2
+
+opioid.components <- c('bolus.fent', 'drip.fent', 'bolus.hydromorph.fent', 'drip.hydromorph.fent',
+                       'drip.morph.fent', 'bolus.hydrocod.fent', 'bolus.metha.fent',
+                       'bolus.remi.fent')
+
+daily.data$tot.opioid <- rowSums(daily.data[,opioid.components], na.rm = TRUE)
+
+## Total antipsychotics: use regression formulas in Table 3 of Andreasen et al,
+##  Biological Psychiatry, vol 67 issue 3 1 Feb 2010, to get haloperidol equivalents
+##  http://www.sciencedirect.com/science/article/pii/S0006322309011251
+daily.data$halop.olanz <- (daily.data$bolus.olanz / 2.9)^(1 / 0.805)
+daily.data$halop.quet <- (daily.data$bolus.quet / 88.16)^(1 / 0.786)
+daily.data$halop.risp <- (daily.data$bolus.risp / 0.79)^(1 / 0.851)
+daily.data$halop.zipras <- (daily.data$bolus.zipras / 35.59)^(1 / 0.578)
+
+antipsyc.components <- c('bolus.halop', 'halop.olanz', 'halop.quet', 'halop.risp', 'halop.zipras')
+
+daily.data$tot.antipsyc <- rowSums(daily.data[,antipsyc.components], na.rm = TRUE)
+
+## Total beta blockers, in metoprolol equivalents
+daily.data$beta.propran <- daily.data$bolus.propran * 1.25
+daily.data$beta.labet <- daily.data$bolus.labet * 0.5
+daily.data$beta.esmo <- (daily.data$drip.esmo / 1000) / 10
+
+betablock.components <- c('bolus.metop', 'beta.propran', 'beta.labet', 'beta.esmo')
+
+daily.data$tot.betablock <- rowSums(daily.data[,betablock.components], na.rm = TRUE)
+
+## For single-variable drugs, create new variable that is 0 if no dose noted
+daily.data$tot.propofol <- with(daily.data, ifelse(is.na(drip.propofol), 0, drip.propofol))
+daily.data$tot.dex <- with(daily.data, ifelse(is.na(drip.dex), 0, drip.dex))
+daily.data$tot.pento <- with(daily.data, ifelse(is.na(bolus.pento), 0, bolus.pento))
+daily.data$tot.clonid <- with(daily.data, ifelse(is.na(bolus.clonid), 0, bolus.clonid))
+
+## Blood products: convert from mL to units (mL not meaningful clinically); if no data, assume none
+daily.data$units.prbc <- with(daily.data, ifelse(is.na(tot.pbrc), 0, tot.pbrc / 350))
+daily.data$units.plasma <- with(daily.data, ifelse(is.na(tot.plasma), 0, tot.plasma / 350))
+daily.data$units.platelets <- with(daily.data, ifelse(is.na(tot.platelets), 0, tot.platelets / 600))
+daily.data$units.cryo <- with(daily.data, ifelse(is.na(tot.cryo), 0, tot.cryo / 250))
 
 ## -- Data management for demographic/summary data -------------------------------------------------
 demog.data$pt.admit <- as.Date(demog.data$pt.admit, format = '%Y-%m-%d')
@@ -368,6 +360,16 @@ demog.data$disposition.coded <- f.relevel(demog.data$disposition.coded, 'Dischar
 demog.data$hosp.death <- f.relevel(demog.data$hosp.death, 'No')
 demog.data$final.death <- f.relevel(demog.data$final.death, 'No')
 
+## -- Get baseline MR variables from day 00 --------------------------------------------------------
+day00.data <- subset(daily.data,
+                     redcap.event.name == 'Inpatient Day 00',
+                     select = c(mrn, med.wt.encounter, max.motor, max.motor.imp, min.glucose,
+                                min.glucose.imp, min.hemoglobin, min.hemoglobin.imp, pupil.react,
+                                pupil.react.imp))
+names(day00.data) <- c('mrn', 'base.weight', 'base.motor', 'base.motor.imp', 'base.glucose',
+                       'base.glucose.imp', 'base.hemoglobin', 'base.hemoglobin.imp',
+                       'base.pupil.react', 'base.pupil.react.imp')
+
 ## -- Create analysis data sets --------------------------------------------------------------------
 ## Use age filter to remove patients with only pupil reactivity data; some sort of weirdness there
 tbi.oneobs <- subset(demog.data,
@@ -407,9 +409,13 @@ label(tbi.oneobs$died.3yr) <- 'Died on or before 3-year mark'
 label(tbi.oneobs$time.death.3yr) <- 'Days to death or 3-year mark'
 label(tbi.oneobs$base.weight) <- 'Median weight during encounter (kg)'
 label(tbi.oneobs$base.motor) <- 'Maximum motor response, day 0'
+label(tbi.oneobs$base.motor.imp) <- 'Max motor response, day 0 (imputed)'
 label(tbi.oneobs$base.glucose) <- 'Minimum glucose, day 0'
+label(tbi.oneobs$base.glucose.imp) <- 'Min glucose, day 0 (imputed)'
 label(tbi.oneobs$base.hemoglobin) <- 'Minimum hemoglobin, day 0'
+label(tbi.oneobs$base.hemoglobin.imp) <- 'Min hemoglobin, day 0 (imputed)'
 label(tbi.oneobs$base.pupil.react) <- 'Pupil reactivity, day 0'
+label(tbi.oneobs$base.pupil.react.imp) <- 'Pupil reactivity, day 0 (imputed)'
 label(tbi.oneobs$n.recs) <- 'Number of daily records'
 label(tbi.oneobs$days.mental) <- 'Days with mental status info'
 label(tbi.oneobs$days.del) <- 'Days of delirium'
@@ -418,9 +424,12 @@ label(tbi.oneobs$dcfd.14) <- 'DCFDs within 14 days of admission'
 
 tbi.daily <- subset(daily.data,
                     mrn %in% tbi.oneobs$mrn,
-                    select = c(mrn, redcap.event.name, mental.status, max.motor, pupil.react,
-                               min.glucose, min.hemoglobin, min.sodium, max.icp,
-                               sofa.resp, sofa.cns, sofa.cv, sofa.liver, sofa.coag, sofa.renal,
+                    select = c(mrn, redcap.event.name, mental.status, max.motor, max.motor.imp,
+                               pupil.react, pupil.react.imp, min.glucose, min.glucose.imp,
+                               min.hemoglobin, min.hemoglobin.imp, min.sodium, min.sodium.imp,
+                               max.icp, sofa.resp, sofa.resp.imp, sofa.cns, sofa.cns.imp, sofa.cv,
+                               sofa.cv.imp, sofa.liver, sofa.liver.imp, sofa.coag, sofa.coag.imp,
+                               sofa.renal, sofa.renal.imp,
                                sofa.nanormal, sofa.namissing, sofa.mod.nanormal, sofa.mod.namissing,
                                tot.benzo, tot.opioid, tot.propofol, tot.dex, tot.antipsyc,
                                tot.betablock, tot.pento, tot.clonid, units.cryo, units.plasma,
@@ -432,10 +441,15 @@ label(tbi.daily$mrn) <- 'Medical record number'
 label(tbi.daily$event) <- 'Study day'
 label(tbi.daily$mental.status) <- 'Mental status'
 label(tbi.daily$max.motor) <- 'Maximum motor response'
+label(tbi.daily$max.motor.imp) <- 'Max motor response (imputed)'
 label(tbi.daily$pupil.react) <- 'Pupil reactivity'
+label(tbi.daily$pupil.react.imp) <- 'Pupil reactivity (imputed)'
 label(tbi.daily$min.glucose) <- 'Minimum glucose'
+label(tbi.daily$min.glucose.imp) <- 'Min glucose (imputed)'
 label(tbi.daily$min.hemoglobin) <- 'Minimum hemoglobin'
+label(tbi.daily$min.hemoglobin.imp) <- 'Min hemoglobin (imputed)'
 label(tbi.daily$min.sodium) <- 'Minimum sodium'
+label(tbi.daily$min.sodium.imp) <- 'Min sodium (imputed)'
 label(tbi.daily$max.icp) <- 'Maximum ICP'
 label(tbi.daily$sofa.resp) <- 'Respiratory SOFA'
 label(tbi.daily$sofa.cns) <- 'CNS SOFA'
@@ -443,6 +457,12 @@ label(tbi.daily$sofa.cv) <- 'Cardiovascular SOFA'
 label(tbi.daily$sofa.liver) <- 'Liver SOFA'
 label(tbi.daily$sofa.coag) <- 'Coagulation SOFA'
 label(tbi.daily$sofa.renal) <- 'Renal SOFA'
+label(tbi.daily$sofa.resp.imp) <- 'Respiratory SOFA (imputed)'
+label(tbi.daily$sofa.cns.imp) <- 'CNS SOFA (imputed)'
+label(tbi.daily$sofa.cv.imp) <- 'Cardiovascular SOFA (imputed)'
+label(tbi.daily$sofa.liver.imp) <- 'Liver SOFA (imputed)'
+label(tbi.daily$sofa.coag.imp) <- 'Coagulation SOFA (imputed)'
+label(tbi.daily$sofa.renal.imp) <- 'Renal SOFA (imputed)'
 label(tbi.daily$sofa.nanormal) <- 'Overall SOFA, missing values considered normal'
 label(tbi.daily$sofa.namissing) <- 'Overall SOFA, missing values left as missing'
 label(tbi.daily$sofa.mod.nanormal) <- 'Modified SOFA, missing values considered normal'
