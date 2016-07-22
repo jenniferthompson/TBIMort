@@ -202,6 +202,103 @@ daily.data$units.plasma <- with(daily.data, ifelse(is.na(tot.plasma), 0, tot.pla
 daily.data$units.platelets <- with(daily.data, ifelse(is.na(tot.platelets), 0, tot.platelets / 600))
 daily.data$units.cryo <- with(daily.data, ifelse(is.na(tot.cryo), 0, tot.cryo / 250))
 
+## -- Function to impute closest daily value within X days before/after a missing date -------------
+## Create numeric variable for study day
+daily.data$study.day <- as.numeric(gsub('Inpatient Day ', '', daily.data$redcap.event.name))
+
+## Helper function to do imputation for a single-ID data frame
+imputer <- function(d1, ## study day or date vector 1 - records that are missing
+                    d2, ## study day or date vector 2 - records that are not missing
+                    win = 2){ ## number of days to look behind/ahead
+  
+  if(class(d1) != class(d2)){
+    stop('d1 and d2 must be of same class')
+  }
+  
+  ## Create matrix of number of days apart for each missing record vs non-missing records
+  ## Columns = each missing row
+  ## Rows = distance of each non-missing row from missing row
+  if(class(d1) == 'Date'){
+    d3 <- sapply(d1, FUN = function(d){ abs(difftime(d, d2, units = 'days')) })
+  } else if(class(d1) %in% c('numeric', 'integer')){
+    d3 <- sapply(d1, FUN = function(d){abs(d - d2)})
+  }
+  
+  ## If only non-missing day is day 0, sapply returns a vector; force to be a matrix
+  if(!is.matrix(d3)){
+    d3 <- matrix(d3, nrow = 1)
+  }
+  
+  ## For each column (missing row), get closest non-missing row within "win" days
+  apply(d3, 2, function(i) {
+    ## Set all non-missing rows > win days away to NA
+    i[abs(i) > win] <- NA
+    
+    if(all(is.na(i))){
+      return(NA)
+    } else{
+      ## Priortize closest, then earliest record
+      which.min(i)
+    }
+  })
+}
+
+impute.closest <- function(dataset, ## data set to use - assumes all records are from same ID
+                           dayvar,  ## study day/date variable name
+                           impvar){ ## name of variable to impute
+  
+  ## T/F vector indicating whether impvar is missing
+  m <- is.na(dataset[, impvar])
+  
+  ## If any records are missing, replace NA with imputed value
+  dataset[,paste0(impvar, '.imp')] <- dataset[,impvar]
+  
+  if(any(m) & !all(m)){
+    ix <- imputer(dataset[m, dayvar], dataset[!m, dayvar], win = 2)
+    
+    if(any(!is.na(ix))) {
+      impvar.imp <- dataset[which(!m)[ix], impvar]
+      dataset[m, paste0(impvar, '.imp')] <- dataset[which(!m)[ix], impvar]
+    }
+  }
+  
+  dataset
+}
+
+## New data frame for each imputed variable
+impute.2days <- c('max.motor', 'pupil.react', 'min.glucose', 'min.hemoglobin',
+                  'sofa.resp', 'sofa.cv', 'sofa.liver', 'sofa.coag', 'sofa.renal')
+
+## List of separate data frames split by ID, sorted by date
+daily.data <- daily.data[order(daily.data$mrn, daily.data$study.day),]
+daily.data.mrn <- split(daily.data, daily.data$mrn)
+
+## Wrapper function
+impute.var <- function(i, impvar){
+  tmp <- i[,c('mrn', 'study.day', impvar)]
+  impute.closest(dataset = tmp, dayvar = 'study.day', impvar = impvar)
+}
+
+## Create a list for each variable imputed using this methodology, containing a list of
+##  length(unique(daily.data$mrn)) data frames with mrn, study.day, original and imputed values
+imputed.daily <- lapply(impute.2days, FUN = function(impvar){
+  lapply(daily.data.mrn, FUN = impute.var, impvar = impvar)
+})
+
+system.time(imputed.daily.rbind <- lapply(imputed.daily, FUN = function(i){ do.call(rbind, i) }))
+## rbind is faster
+# system.time(imputed.daily.unsplit <- lapply(imputed.daily, FUN = function(i){ unsplit(i, daily.data$mrn) }))
+
+imputed.daily.cbind <- do.call(cbind, lapply(imputed.daily.rbind, FUN = function(i){ i[,ncol(i)] }))
+colnames(imputed.daily.cbind) <- paste0(impute.2days, '.imp')
+
+daily.data <- cbind(daily.data, imputed.daily.cbind)
+
+## Function did not preserve levels of pupil.react; re-factor
+daily.data$pupil.react.imp <- factor(daily.data$pupil.react.imp - 1,
+                                     levels = 0:2,
+                                     labels = c('Both fixed', 'One reactive', 'Both reactive'))
+
 ## -- Data management for demographic/summary data -------------------------------------------------
 demog.data$pt.admit <- as.Date(demog.data$pt.admit, format = '%Y-%m-%d')
 demog.data$pt.injury.date <- as.Date(demog.data$pt.injury.date, format = '%Y-%m-%d')
