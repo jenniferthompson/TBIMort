@@ -22,7 +22,7 @@ each patient; the second presents descriptives for variables collected on a dail
 
 <<setup, message=FALSE>>=
 library(Hmisc)
-load('tbi_datasets.Rdata')
+load('AnalysisData/tbi_datasets.Rdata')
 @
 
 All code used to create analysis data sets can be found at
@@ -143,13 +143,17 @@ latex.missing <- function(data.miss){
 
 ## -- List of baseline risk factors ---------------------------------------------------------------
 baseline.vars <- c('age', 'gender', 'insurance.code', 'pt.marshall', 'pt.cerebral', 'pt.epidural',
-                   'iss', 'pt.injury', 'cpr.yn', 'base.motor', 'base.pupil.react', 'base.glucose',
-                   'base.hemoglobin', 'base.weight')
+                   'iss', 'pt.injury', 'cpr.yn', 'base.motor', 'base.motor.imp', 'base.pupil.react',
+                   'base.pupil.react.imp', 'base.glucose', 'base.glucose.imp', 'base.hemoglobin',
+                   'base.hemoglobin.imp', 'base.weight')
 
 ## -- List of time-varying risk factors -----------------------------------------------------------
-varying.vars <- c('max.motor', 'pupil.react', 'min.glucose', 'min.hemoglobin', 'max.icp',
-                  'min.sodium', 'sofa.resp', 'sofa.cns', 'sofa.cv', 'sofa.liver', 'sofa.coag',
-                  'sofa.renal', 'tot.benzo', 'tot.opioid', 'tot.propofol', 'tot.dex', 'tot.antipsyc',
+varying.vars <- c('max.motor', 'max.motor.imp', 'pupil.react', 'pupil.react.imp', 'min.glucose',
+                  'min.glucose.imp', 'min.hemoglobin', 'min.hemoglobin.imp', 'max.icp',
+                  'max.icp.imp', 'min.sodium', 'min.sodium.imp', 'sofa.resp', 'sofa.resp.imp',
+                  'sofa.cns', 'sofa.cns.imp', 'sofa.cv', 'sofa.cv.imp', 'sofa.liver',
+                  'sofa.liver.imp', 'sofa.coag', 'sofa.coag.imp', 'sofa.renal', 'sofa.renal.imp',
+                  'tot.benzo', 'tot.opioid', 'tot.propofol', 'tot.dex', 'tot.antipsyc',
                   'tot.betablock', 'tot.pento', 'tot.clonid', 'units.cryo', 'units.plasma',
                   'units.platelets', 'units.prbc')
 
