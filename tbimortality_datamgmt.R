@@ -219,6 +219,20 @@ daily.data$pupil.react.imp <- factor(daily.data$pupil.react.imp - 1,
                                      levels = 0:2,
                                      labels = c('Both fixed', 'One reactive', 'Both reactive'))
 
+## Impute max ICP: if higher than 120, assume 120; if missing, impute uniform value between 0-20
+impute.normal <- function(x, min.val, max.val){
+  if(!is.na(x)){
+    return(x)
+  } else{
+    return(runif(n = 1, min = min.val, max = max.val))
+  }
+}
+
+daily.data$max.icp.imp <- apply(as.matrix(daily.data$max.icp),
+                                MARGIN = 1,
+                                FUN = impute.normal, min.val = 0, max.val = 20)
+daily.data$max.icp.imp <- ifelse(daily.data$max.icp.imp > 120, 120, round(daily.data$max.icp.imp))
+
 ## Calculate overall and modified SOFA; two versions of each:
 ## - missing component data assumed to be normal
 ## - missing component data considered missing
@@ -227,9 +241,13 @@ sofa.mod.comps <- setdiff(sofa.comps, 'sofa.cns')
 
 daily.data$sofa.nanormal <- rowSums(daily.data[,sofa.comps], na.rm = TRUE)
 daily.data$sofa.namissing <- rowSums(daily.data[,sofa.comps], na.rm = FALSE)
+daily.data$sofa.nanormal.imp <- rowSums(daily.data[,paste0(sofa.comps, '.imp')], na.rm = TRUE)
+daily.data$sofa.namissing.imp <- rowSums(daily.data[,paste0(sofa.comps, '.imp')], na.rm = FALSE)
 
 daily.data$sofa.mod.nanormal <- rowSums(daily.data[,sofa.mod.comps], na.rm = TRUE)
 daily.data$sofa.mod.namissing <- rowSums(daily.data[,sofa.mod.comps], na.rm = FALSE)
+daily.data$sofa.mod.nanormal.imp <- rowSums(daily.data[,paste0(sofa.mod.comps, '.imp')], na.rm = TRUE)
+daily.data$sofa.mod.namissing.imp <- rowSums(daily.data[,paste0(sofa.mod.comps, '.imp')], na.rm = FALSE)
 
 ## Drug variables - can be done separately from imputation, because we assume no data = dose of 0 ##
 ## Benzos, in midazolam equivalents
@@ -381,7 +399,9 @@ tbi.oneobs <- subset(demog.data,
   left_join(day00.data, by = 'mrn') %>%
   left_join(mental.vars, by = 'mrn') %>%
   left_join(select(dcfd.data, mrn, dcfd.14), by = 'mrn') %>%
-  filter(!is.na(age))
+  filter(!is.na(age)) %>%
+  ## If baseline motor score is still missing after imputation, assume score of 6
+  mutate(base.motor.imp = ifelse(is.na(base.motor.imp), 6, base.motor.imp))
 
 label(tbi.oneobs$mrn) <- 'Medical record number'
 label(tbi.oneobs$age) <- 'Age at admission'
@@ -427,10 +447,12 @@ tbi.daily <- subset(daily.data,
                     select = c(mrn, redcap.event.name, mental.status, max.motor, max.motor.imp,
                                pupil.react, pupil.react.imp, min.glucose, min.glucose.imp,
                                min.hemoglobin, min.hemoglobin.imp, min.sodium, min.sodium.imp,
-                               max.icp, sofa.resp, sofa.resp.imp, sofa.cns, sofa.cns.imp, sofa.cv,
-                               sofa.cv.imp, sofa.liver, sofa.liver.imp, sofa.coag, sofa.coag.imp,
-                               sofa.renal, sofa.renal.imp,
-                               sofa.nanormal, sofa.namissing, sofa.mod.nanormal, sofa.mod.namissing,
+                               max.icp, max.icp.imp, sofa.resp, sofa.resp.imp, sofa.cns,
+                               sofa.cns.imp, sofa.cv, sofa.cv.imp, sofa.liver, sofa.liver.imp,
+                               sofa.coag, sofa.coag.imp, sofa.renal, sofa.renal.imp,
+                               sofa.nanormal, sofa.nanormal.imp, sofa.namissing, sofa.namissing.imp,
+                               sofa.mod.nanormal, sofa.mod.nanormal.imp,
+                               sofa.mod.namissing, sofa.mod.namissing.imp,
                                tot.benzo, tot.opioid, tot.propofol, tot.dex, tot.antipsyc,
                                tot.betablock, tot.pento, tot.clonid, units.cryo, units.plasma,
                                units.platelets, units.prbc))
@@ -451,6 +473,7 @@ label(tbi.daily$min.hemoglobin.imp) <- 'Min hemoglobin (imputed)'
 label(tbi.daily$min.sodium) <- 'Minimum sodium'
 label(tbi.daily$min.sodium.imp) <- 'Min sodium (imputed)'
 label(tbi.daily$max.icp) <- 'Maximum ICP'
+label(tbi.daily$max.icp.imp) <- 'Max ICP (imputed)'
 label(tbi.daily$sofa.resp) <- 'Respiratory SOFA'
 label(tbi.daily$sofa.cns) <- 'CNS SOFA'
 label(tbi.daily$sofa.cv) <- 'Cardiovascular SOFA'
