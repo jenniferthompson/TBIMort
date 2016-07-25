@@ -1,0 +1,73 @@
+%% -- Specially formatted Latex comment tells RStudio to compile PDF with knitr
+% !Rnw weave = knitr
+
+\documentclass{article}
+
+\usepackage{setspace, relsize}
+\usepackage{longtable}
+\usepackage[margin = 0.425in]{geometry}
+\usepackage{hyperref}
+
+\title{SCCM 2017 Abstract Submission: In-Hospital and 3-Year Mortality Among TBI Patients with >=1 Day in ICU}
+\author{Jennifer Thompson, MPH; Supervisor: Rameela Chandrasekhar, PhD}
+\date{\today}
+
+\begin{document}
+
+<<setup, echo = FALSE>>=
+opts_chunk$set(echo=FALSE, results='hide', warning=FALSE, message=FALSE, cache=FALSE, error=FALSE)
+options(replace.assign = TRUE, width = 90)
+@
+
+<<prelim>>=
+## Load libraries
+library(rms)
+library(ggplot2)
+
+load(file.path('AnalysisData', 'tbi_datasets.Rdata'))
+source('tbi_timevarying.R')
+
+@
+
+All code used to create original analysis data sets can be found at
+
+\url{https://github.com/jenniferthompson/TBIMort/blob/master/tbimortality_datamgmt.R}
+
+The datasets were created at \Sexpr{datasets.created.at},  using raw data exported from REDCap.
+
+<<datamgmt>>=
+## -- Restrict patients to only those with >=1 day in the ICU --------------------------------------
+n.pts.org <- length(unique(tbi.oneobs$mrn))
+pts.icu <- unique(subset(tbi.oneobs, icu.los > 0))$mrn
+n.pts.icu <- length(pts.icu)
+
+tbi.oneobs.icu <- subset(tbi.oneobs, mrn %in% pts.icu)
+tbi.daily.icu <- subset(tbi.daily, mrn %in% pts.icu)
+
+## -- Create time-varying data sets for each outcome -----------------------------------------------
+
+## Time-varying covariates used in both mortality models
+tv.covars <- c('mental.status', 'max.motor.imp', 'pupil.react.imp', 'min.glucose.imp',
+               'min.hemoglobin.imp', 'min.sodium.imp', 'sofa.mod.nanormal.imp', 'max.icp.imp',
+               'tot.opioid', 'tot.benzo', 'tot.antipsyc', 'tot.betablock', 'tot.propofol', 'tot.dex',
+               'tot.pento', 'tot.clonid', 'units.cryo', 'units.plasma', 'units.platelets',
+               'units.prbc')
+
+## In-hospital mortality ##
+## Create subset of daily data including only variables used in in-hospital mortality model
+tbi.daily.covars <- tbi.daily.icu[,c('mrn', 'study.day', tv.covars)]
+
+tv.data.inhosp <- timevarying.data(idvar = 'mrn',
+                                   recvar = 'study.day',
+                                   org.data = tbi.daily.covars,
+                                   time.var = 'time.death.dc',
+                                   event.var = 'hosp.death',
+                                   event.string = 'Yes',
+                                   data.set = tbi.oneobs.icu)
+
+
+
+@
+
+
+\end{document}
