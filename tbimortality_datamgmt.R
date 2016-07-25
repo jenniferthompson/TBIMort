@@ -444,12 +444,12 @@ label(tbi.oneobs$dcfd.14) <- 'DCFDs within 14 days of admission'
 
 tbi.daily <- subset(daily.data,
                     mrn %in% tbi.oneobs$mrn,
-                    select = c(mrn, redcap.event.name, mental.status, max.motor, max.motor.imp,
-                               pupil.react, pupil.react.imp, min.glucose, min.glucose.imp,
-                               min.hemoglobin, min.hemoglobin.imp, min.sodium, min.sodium.imp,
-                               max.icp, max.icp.imp, sofa.resp, sofa.resp.imp, sofa.cns,
-                               sofa.cns.imp, sofa.cv, sofa.cv.imp, sofa.liver, sofa.liver.imp,
-                               sofa.coag, sofa.coag.imp, sofa.renal, sofa.renal.imp,
+                    select = c(mrn, redcap.event.name, study.day, mental.status, max.motor,
+                               max.motor.imp, pupil.react, pupil.react.imp, min.glucose,
+                               min.glucose.imp, min.hemoglobin, min.hemoglobin.imp, min.sodium,
+                               min.sodium.imp, max.icp, max.icp.imp, sofa.resp, sofa.resp.imp,
+                               sofa.cns, sofa.cns.imp, sofa.cv, sofa.cv.imp, sofa.liver,
+                               sofa.liver.imp, sofa.coag, sofa.coag.imp, sofa.renal, sofa.renal.imp,
                                sofa.nanormal, sofa.nanormal.imp, sofa.namissing, sofa.namissing.imp,
                                sofa.mod.nanormal, sofa.mod.nanormal.imp,
                                sofa.mod.namissing, sofa.mod.namissing.imp,
@@ -460,7 +460,8 @@ tbi.daily <- subset(daily.data,
 names(tbi.daily) <- gsub('^redcap\\.event\\.name$', 'event', names(tbi.daily))
 
 label(tbi.daily$mrn) <- 'Medical record number'
-label(tbi.daily$event) <- 'Study day'
+label(tbi.daily$event) <- 'Study event'
+label(tbi.daily$study.day) <- 'Study day'
 label(tbi.daily$mental.status) <- 'Mental status'
 label(tbi.daily$max.motor) <- 'Maximum motor response'
 label(tbi.daily$max.motor.imp) <- 'Max motor response (imputed)'
