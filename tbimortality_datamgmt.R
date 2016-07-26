@@ -124,7 +124,7 @@ daily.data$sofa.renal <- with(daily.data, {
 
 ## -- Impute closest value within X days before/after a missing date for several covariates --------
 ## Create numeric variable for study day
-daily.data$study.day <- as.numeric(gsub('Inpatient Day ', '', daily.data$redcap.event.name))
+daily.data$study.day <- as.numeric(gsub('Inpatient Day ', '', daily.data$redcap.event.name)) + 1
 
 ## Helper function to do imputation for a single-ID data frame
 imputer <- function(d1, ## study day or date vector 1 - records that are missing
@@ -321,20 +321,20 @@ demog.data$discharge.date <- as.Date(demog.data$discharge.date, format = '%Y-%m-
 ## Time to in-hospital death: admission to time of in-hospital death
 demog.data$time.death.inhosp <- with(demog.data, {
   ifelse(is.na(pt.admit) | is.na(hosp.death.date), NA,
-         as.numeric(difftime(hosp.death.date, pt.admit, units = 'days'))) })
+         as.numeric(difftime(hosp.death.date, pt.admit, units = 'days')) + 1) })
 
 ## Time to in-hospital death or discharge: admission to time of in-hospital death, or
 ##  censored at discharge
 demog.data$time.death.dc <- with(demog.data, {
   ifelse(!is.na(time.death.inhosp), time.death.inhosp,
-         as.numeric(difftime(discharge.date, pt.admit, units = 'days'))) })
+         as.numeric(difftime(discharge.date, pt.admit, units = 'days')) + 1) })
 
 ## Time to overall death: admission to max(SSDI death, hospital death)
 demog.data$time.death.ever <- with(demog.data, {
   ifelse(is.na(pt.admit) | (is.na(hosp.death.date) & is.na(ssdi.death.date)), NA,
   ifelse(is.na(hosp.death.date) | ssdi.death.date > hosp.death.date,
-         as.numeric(difftime(ssdi.death.date, pt.admit, units = 'days')),
-         as.numeric(difftime(hosp.death.date, pt.admit, units = 'days')))) })
+         as.numeric(difftime(ssdi.death.date, pt.admit, units = 'days')) + 1,
+         as.numeric(difftime(hosp.death.date, pt.admit, units = 'days')) + 1)) })
 
 ## Time to 3-year death: time to overall death, or censored at 1095 days
 demog.data$time.death.3yr <- with(demog.data, {
@@ -458,6 +458,12 @@ tbi.daily <- subset(daily.data,
                                units.platelets, units.prbc))
 
 names(tbi.daily) <- gsub('^redcap\\.event\\.name$', 'event', names(tbi.daily))
+
+## Remove records from tbi.daily which are after in-hospital death or discharge date
+tbi.daily <- tbi.daily %>%
+  left_join(dplyr::select(tbi.oneobs, mrn, time.death.dc), by = 'mrn') %>%
+  filter(study.day <= time.death.dc) %>%
+  dplyr::select(-time.death.dc)
 
 label(tbi.daily$mrn) <- 'Medical record number'
 label(tbi.daily$event) <- 'Study event'
