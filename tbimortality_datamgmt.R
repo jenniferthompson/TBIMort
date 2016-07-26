@@ -122,6 +122,11 @@ daily.data$sofa.renal <- with(daily.data, {
   ifelse(!is.na(max.creatinine) & max.creatinine >= 2, 2,
   ifelse(!is.na(max.creatinine) & max.creatinine >= 1.2, 1, 0))))) })
 
+## Dichotomous version of maximum ICP: normal if score is <= 20, abnormal if > 20
+daily.data$max.icp.dich <-
+  with(daily.data, factor(ifelse(is.na(max.icp) | max.icp <= 20, 1, 2),
+                          levels = 1:2, labels = c('Normal ICP (<=20)', 'Abnormal (>20)')))
+
 ## -- Impute closest value within X days before/after a missing date for several covariates --------
 ## Create numeric variable for study day
 daily.data$study.day <- as.numeric(gsub('Inpatient Day ', '', daily.data$redcap.event.name)) + 1
@@ -447,12 +452,12 @@ tbi.daily <- subset(daily.data,
                     select = c(mrn, redcap.event.name, study.day, mental.status, max.motor,
                                max.motor.imp, pupil.react, pupil.react.imp, min.glucose,
                                min.glucose.imp, min.hemoglobin, min.hemoglobin.imp, min.sodium,
-                               min.sodium.imp, max.icp, max.icp.imp, sofa.resp, sofa.resp.imp,
-                               sofa.cns, sofa.cns.imp, sofa.cv, sofa.cv.imp, sofa.liver,
-                               sofa.liver.imp, sofa.coag, sofa.coag.imp, sofa.renal, sofa.renal.imp,
-                               sofa.nanormal, sofa.nanormal.imp, sofa.namissing, sofa.namissing.imp,
-                               sofa.mod.nanormal, sofa.mod.nanormal.imp,
-                               sofa.mod.namissing, sofa.mod.namissing.imp,
+                               min.sodium.imp, max.icp, max.icp.imp, max.icp.dich,
+                               sofa.resp, sofa.resp.imp, sofa.cns, sofa.cns.imp, sofa.cv,
+                               sofa.cv.imp, sofa.liver, sofa.liver.imp, sofa.coag, sofa.coag.imp,
+                               sofa.renal, sofa.renal.imp, sofa.nanormal, sofa.nanormal.imp,
+                               sofa.namissing, sofa.namissing.imp, sofa.mod.nanormal,
+                               sofa.mod.nanormal.imp, sofa.mod.namissing, sofa.mod.namissing.imp,
                                tot.benzo, tot.opioid, tot.propofol, tot.dex, tot.antipsyc,
                                tot.betablock, tot.pento, tot.clonid, units.cryo, units.plasma,
                                units.platelets, units.prbc))
@@ -481,6 +486,7 @@ label(tbi.daily$min.sodium) <- 'Minimum sodium'
 label(tbi.daily$min.sodium.imp) <- 'Min sodium (imputed)'
 label(tbi.daily$max.icp) <- 'Maximum ICP'
 label(tbi.daily$max.icp.imp) <- 'Max ICP (imputed)'
+label(tbi.daily$max.icp.dich) <- 'Max ICP, dichotomous'
 label(tbi.daily$sofa.resp) <- 'Respiratory SOFA'
 label(tbi.daily$sofa.cns) <- 'CNS SOFA'
 label(tbi.daily$sofa.cv) <- 'Cardiovascular SOFA'
