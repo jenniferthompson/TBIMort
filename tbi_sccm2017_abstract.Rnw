@@ -46,25 +46,46 @@ tbi.daily.icu <- subset(tbi.daily, mrn %in% pts.icu)
 
 ## -- Create time-varying data sets for each outcome -----------------------------------------------
 
-## Time-varying covariates used in both mortality models
+## Create subset of daily data including only variables used in in-hospital mortality model
 tv.covars <- c('mental.status', 'max.motor.imp', 'pupil.react.imp', 'min.glucose.imp',
-               'min.hemoglobin.imp', 'min.sodium.imp', 'sofa.mod.nanormal.imp', 'max.icp.imp',
-               'tot.opioid', 'tot.benzo', 'tot.antipsyc', 'tot.betablock', 'tot.propofol', 'tot.dex',
-               'tot.pento', 'tot.clonid', 'units.cryo', 'units.plasma', 'units.platelets',
-               'units.prbc')
+               'min.hemoglobin.imp', 'min.sodium.imp', 'sofa.mod.nanormal.imp', 'tot.opioid',
+               'tot.benzo', 'tot.antipsyc', 'tot.betablock', 'tot.propofol', 'tot.dex', 'tot.pento',
+               'tot.clonid', 'units.cryo', 'units.plasma', 'units.platelets', 'units.prbc')
+
+tbi.daily.covars.icpc <- tbi.daily.icu[,c('mrn', 'study.day', tv.covars, 'max.icp.imp')]
+tbi.daily.covars.icpd <- tbi.daily.icu[,c('mrn', 'study.day', tv.covars, 'max.icp.dich')]
 
 ## In-hospital mortality ##
-## Create subset of daily data including only variables used in in-hospital mortality model
-tbi.daily.covars <- tbi.daily.icu[,c('mrn', 'study.day', tv.covars)]
+tv.data.inhosp.icpc <- timevarying.data(idvar = 'mrn',
+                                        recvar = 'study.day',
+                                        org.data = tbi.daily.covars.icpc,
+                                        time.var = 'time.death.dc',
+                                        event.var = 'hosp.death',
+                                        event.string = 'Yes',
+                                        data.set = tbi.oneobs.icu)
+tv.data.inhosp.icpd <- timevarying.data(idvar = 'mrn',
+                                        recvar = 'study.day',
+                                        org.data = tbi.daily.covars.icpd,
+                                        time.var = 'time.death.dc',
+                                        event.var = 'hosp.death',
+                                        event.string = 'Yes',
+                                        data.set = tbi.oneobs.icu)
 
-tv.data.inhosp <- timevarying.data(idvar = 'mrn',
-                                   recvar = 'study.day',
-                                   org.data = tbi.daily.covars,
-                                   time.var = 'time.death.dc',
-                                   event.var = 'hosp.death',
-                                   event.string = 'Yes',
-                                   data.set = tbi.oneobs.icu)
-
+## Three-year mortality ##
+tv.data.3yr.icpc <- timevarying.data(idvar = 'mrn',
+                                     recvar = 'study.day',
+                                     org.data = tbi.daily.covars.icpc,
+                                     time.var = 'time.death.3yr',
+                                     event.var = 'died.3yr',
+                                     event.string = 'Yes',
+                                     data.set = tbi.oneobs.icu)
+tv.data.3yr.icpd <- timevarying.data(idvar = 'mrn',
+                                     recvar = 'study.day',
+                                     org.data = tbi.daily.covars.icpd,
+                                     time.var = 'time.death.3yr',
+                                     event.var = 'died.3yr',
+                                     event.string = 'Yes',
+                                     data.set = tbi.oneobs.icu)
 
 
 @
