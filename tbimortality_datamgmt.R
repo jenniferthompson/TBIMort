@@ -308,6 +308,16 @@ daily.data$tot.dex <- with(daily.data, ifelse(is.na(drip.dex), 0, drip.dex))
 daily.data$tot.pento <- with(daily.data, ifelse(is.na(bolus.pento), 0, bolus.pento))
 daily.data$tot.clonid <- with(daily.data, ifelse(is.na(bolus.clonid), 0, bolus.clonid))
 
+## Cube root drug variables
+daily.data$tot.opioid.cube <- daily.data$tot.opioid**(1/3)
+daily.data$tot.benzo.cube <- daily.data$tot.benzo**(1/3)
+daily.data$tot.propofol.cube <- daily.data$tot.propofol**(1/3)
+daily.data$tot.dex.cube <- daily.data$tot.dex**(1/3)
+daily.data$tot.antipsyc.cube <- daily.data$tot.antipsyc**(1/3)
+daily.data$tot.betablock.cube <- daily.data$tot.betablock**(1/3)
+daily.data$tot.pento.cube <- daily.data$tot.pento**(1/3)
+daily.data$tot.clonid.cube <- daily.data$tot.clonid**(1/3)
+
 ## Blood products: convert from mL to units (mL not meaningful clinically); if no data, assume none
 daily.data$units.prbc <- with(daily.data, ifelse(is.na(tot.pbrc), 0, tot.pbrc / 350))
 daily.data$units.plasma <- with(daily.data, ifelse(is.na(tot.plasma), 0, tot.plasma / 350))
@@ -459,8 +469,10 @@ tbi.daily <- subset(daily.data,
                                sofa.renal, sofa.renal.imp, sofa.nanormal, sofa.nanormal.imp,
                                sofa.namissing, sofa.namissing.imp, sofa.mod.nanormal,
                                sofa.mod.nanormal.imp, sofa.mod.namissing, sofa.mod.namissing.imp,
-                               tot.benzo, tot.opioid, tot.propofol, tot.dex, tot.antipsyc,
-                               tot.betablock, tot.pento, tot.clonid, units.cryo, units.plasma,
+                               tot.benzo, tot.benzo.cube, tot.opioid, tot.opioid.cube, tot.propofol,
+                               tot.propofol.cube, tot.dex, tot.dex.cube, tot.antipsyc,
+                               tot.antipsyc.cube, tot.betablock, tot.betablock.cube, tot.pento,
+                               tot.pento.cube, tot.clonid, tot.clonid.cube, units.cryo, units.plasma,
                                units.platelets, units.prbc))
 
 names(tbi.daily) <- gsub('^redcap\\.event\\.name$', 'event', names(tbi.daily))
@@ -505,13 +517,21 @@ label(tbi.daily$sofa.namissing) <- 'Overall SOFA, missing values left as missing
 label(tbi.daily$sofa.mod.nanormal) <- 'Modified SOFA, missing values considered normal'
 label(tbi.daily$sofa.mod.namissing) <- 'Modified SOFA, missing values left as missing'
 label(tbi.daily$tot.benzo) <- '24h benzodiazepines, midaz. equivalents'
+label(tbi.daily$tot.benzo.cube) <- '24h benzodiazepines, cube root'
 label(tbi.daily$tot.opioid) <- '24h opioids, fentanyl equivalents'
+label(tbi.daily$tot.opioid.cube) <- '24h opioids, cube root'
 label(tbi.daily$tot.propofol) <- '24h propofol'
+label(tbi.daily$tot.propofol.cube) <- '24h propofol, cube root'
 label(tbi.daily$tot.dex) <- '24h dexmedetomidine'
+label(tbi.daily$tot.dex.cube) <- '24h dexmedetomidine, cube root'
 label(tbi.daily$tot.antipsyc) <- '24h antipsychotics, haloperidol equivalents'
+label(tbi.daily$tot.antipsyc.cube) <- '24h antipsychotics, cube root'
 label(tbi.daily$tot.betablock) <- '24h beta blockers'
+label(tbi.daily$tot.betablock.cube) <- '24h beta blockers, cube root'
 label(tbi.daily$tot.pento) <- '24h pentobarbital'
+label(tbi.daily$tot.pento.cube) <- '24h pentobarbital, cube root'
 label(tbi.daily$tot.clonid) <- '24h clonidine'
+label(tbi.daily$tot.clonid.cube) <- '24h clonidine, cube root'
 label(tbi.daily$units.prbc) <- 'Units of packed red blood cells given (mL/350)'
 label(tbi.daily$units.plasma) <- 'Units of plasma given (mL/350)'
 label(tbi.daily$units.platelets) <- 'Units of platelets given (mL/600)'
