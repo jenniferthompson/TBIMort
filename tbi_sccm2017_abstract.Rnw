@@ -87,6 +87,74 @@ tv.data.3yr.icpd <- timevarying.data(idvar = 'mrn',
                                      event.string = 'Yes',
                                      data.set = tbi.oneobs.icu)
 
+## -- Merge baseline and discharge variables onto time-varying data sets ---------------------------
+baseline.vars <- c('age', 'gender', 'insurance.code', 'pt.marshall', 'pt.cerebral.na',
+                   'pt.epidural.na', 'iss', 'cpr.yn')
+longterm.vars <- c('disposition.coded', 'vent.days', 'time.death.dc')
+
+tv.data.inhosp.icpc <- merge(tbi.oneobs.icu[,c('mrn', baseline.vars)],
+                             tv.data.inhosp.icpc,
+                             by = 'mrn', all.x = FALSE, all.y = TRUE)
+tv.data.inhosp.icpd <- merge(tbi.oneobs.icu[,c('mrn', baseline.vars)],
+                             tv.data.inhosp.icpd,
+                             by = 'mrn', all.x = FALSE, all.y = TRUE)
+
+tv.data.3yr.icpc <- merge(tbi.oneobs.icu[,c('mrn', baseline.vars, longterm.vars)],
+                          tv.data.3yr.icpc,
+                          by = 'mrn', all.x = FALSE, all.y = TRUE)
+tv.data.3yr.icpd <- merge(tbi.oneobs.icu[,c('mrn', baseline.vars, longterm.vars)],
+                          tv.data.3yr.icpd,
+                          by = 'mrn', all.x = FALSE, all.y = TRUE)
+
+@
+
+<<modelfits>>=
+## -- Model prep: create aregImpute objects --------------------------------------------------------
+set.seed(56)
+areg.inhosp.icpc <- aregImpute(~ age + gender + insurance.code + pt.marshall + pt.cerebral.na +
+                                 pt.epidural.na + iss + cpr.yn + mental.status + max.motor.imp +
+                                 pupil.react.imp + min.glucose.imp + min.hemoglobin.imp +
+                                 min.sodium.imp + sofa.mod.nanormal.imp + tot.opioid + tot.benzo +
+                                 tot.antipsyc + tot.betablock + tot.propofol + I(tot.dex) +
+                                 I(tot.pento) + tot.clonid + I(units.cryo) + I(units.plasma) +
+                                 I(units.platelets) + I(units.prbc) + max.icp.imp + start.day,
+                               data = tv.data.inhosp.icpc,
+                               n.impute = 10)
+
+set.seed(56)
+areg.inhosp.icpd <- aregImpute(~ age + gender + insurance.code + pt.marshall + pt.cerebral.na +
+                                 pt.epidural.na + iss + cpr.yn + mental.status + max.motor.imp +
+                                 pupil.react.imp + min.glucose.imp + min.hemoglobin.imp +
+                                 min.sodium.imp + sofa.mod.nanormal.imp + tot.opioid + tot.benzo +
+                                 tot.antipsyc + tot.betablock + tot.propofol + I(tot.dex) +
+                                 I(tot.pento) + tot.clonid + I(units.cryo) + I(units.plasma) +
+                                 I(units.platelets) + I(units.prbc) + max.icp.dich + start.day,
+                               data = tv.data.inhosp.icpd,
+                               n.impute = 10)
+
+set.seed(56)
+areg.3yr.icpc <- aregImpute(~ age + gender + insurance.code + pt.marshall + pt.cerebral.na +
+                              pt.epidural.na + iss + cpr.yn + mental.status + max.motor.imp +
+                              pupil.react.imp + min.glucose.imp + min.hemoglobin.imp +
+                              min.sodium.imp + sofa.mod.nanormal.imp + tot.opioid + tot.benzo +
+                              tot.antipsyc + tot.betablock + tot.propofol + I(tot.dex) +
+                              I(tot.pento) + tot.clonid + I(units.cryo) + I(units.plasma) +
+                              I(units.platelets) + I(units.prbc) + max.icp.imp +
+                              disposition.coded + vent.days + time.death.dc + start.day,
+                            data = tv.data.3yr.icpc,
+                            n.impute = 10)
+
+set.seed(56)
+areg.3yr.icpd <- aregImpute(~ age + gender + insurance.code + pt.marshall + pt.cerebral.na +
+                              pt.epidural.na + iss + cpr.yn + mental.status + max.motor.imp +
+                              pupil.react.imp + min.glucose.imp + min.hemoglobin.imp +
+                              min.sodium.imp + sofa.mod.nanormal.imp + tot.opioid + tot.benzo +
+                              tot.antipsyc + tot.betablock + tot.propofol + I(tot.dex) +
+                              I(tot.pento) + tot.clonid + I(units.cryo) + I(units.plasma) +
+                              I(units.platelets) + I(units.prbc) + max.icp.dich +
+                              disposition.coded + vent.days + time.death.dc + start.day,
+                            data = tv.data.3yr.icpd,
+                            n.impute = 10)
 
 @
 
