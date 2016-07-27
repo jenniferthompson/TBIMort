@@ -156,6 +156,16 @@ areg.3yr.icpd <- aregImpute(~ age + gender + insurance.code + pt.marshall + pt.c
                             data = tv.data.3yr.icpd,
                             n.impute = 10)
 
+## -- Model prep: Create Surv objects --------------------------------------------------------------
+surv.inhosp.icpc <-
+  with(tv.data.inhosp.icpc, Surv(time = start.day, time2 = stop.day, event = as.numeric(had.event)))
+surv.inhosp.icpd <-
+  with(tv.data.inhosp.icpd, Surv(time = start.day, time2 = stop.day, event = as.numeric(had.event)))
+surv.3yr.icpc <-
+  with(tv.data.3yr.icpc, Surv(time = start.day, time2 = stop.day, event = as.numeric(had.event)))
+surv.3yr.icpd <-
+  with(tv.data.3yr.icpd, Surv(time = start.day, time2 = stop.day, event = as.numeric(had.event)))
+
 @
 
 
