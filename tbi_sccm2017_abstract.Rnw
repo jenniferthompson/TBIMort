@@ -8,7 +8,7 @@
 \usepackage[margin = 0.425in]{geometry}
 \usepackage{hyperref}
 
-\title{SCCM 2017 Abstract Submission: In-Hospital and 3-Year Mortality Among TBI Patients with $\ge$ Day in ICU}
+\title{SCCM 2017 Abstract Submission: In-Hospital and 3-Year Mortality Among TBI Patients with $\ge$ 1 Day in ICU}
 \author{Jennifer Thompson, MPH; Supervisor: Rameela Chandrasekhar, PhD}
 \date{\today}
 
@@ -182,60 +182,60 @@ create.results.matrix <- function(modobj){
 
 
 ## -- Model prep: create or load aregImpute objects ------------------------------------------------
-set.seed(56)
-areg.inhosp.icpc <- aregImpute(~ age + gender + insurance.code + pt.marshall + pt.cerebral.na +
-                                 pt.epidural.na + iss + cpr.yn + mental.status + max.motor.imp +
-                                 pupil.react.imp + min.glucose.imp + min.hemoglobin.imp +
-                                 min.sodium.imp + sofa.mod.nanormal.imp + tot.opioid.cube +
-                                 tot.benzo.cube + tot.antipsyc.cube + tot.betablock.cube +
-                                 tot.propofol.cube + I(tot.dex.cube) + I(tot.pento.cube) +
-                                 tot.clonid.cube + I(units.cryo) + I(units.plasma) +
-                                 I(units.platelets) + I(units.prbc) + max.icp.imp + start.day,
-                               data = tv.data.inhosp.icpc,
-                               n.impute = 10)
+# set.seed(56)
+# areg.inhosp.icpc <- aregImpute(~ age + gender + insurance.code + pt.marshall + pt.cerebral.na +
+#                                  pt.epidural.na + iss + cpr.yn + mental.status + max.motor.imp +
+#                                  pupil.react.imp + min.glucose.imp + min.hemoglobin.imp +
+#                                  min.sodium.imp + sofa.mod.nanormal.imp + tot.opioid.cube +
+#                                  tot.benzo.cube + tot.antipsyc.cube + tot.betablock.cube +
+#                                  tot.propofol.cube + I(tot.dex.cube) + I(tot.pento.cube) +
+#                                  tot.clonid.cube + I(units.cryo) + I(units.plasma) +
+#                                  I(units.platelets) + I(units.prbc) + max.icp.imp + start.day,
+#                                data = tv.data.inhosp.icpc,
+#                                n.impute = 10)
+# 
+# set.seed(56)
+# areg.inhosp.icpd <- aregImpute(~ age + gender + insurance.code + pt.marshall + pt.cerebral.na +
+#                                  pt.epidural.na + iss + cpr.yn + mental.status + max.motor.imp +
+#                                  pupil.react.imp + min.glucose.imp + min.hemoglobin.imp +
+#                                  min.sodium.imp + sofa.mod.nanormal.imp + tot.opioid.cube +
+#                                  tot.benzo.cube + tot.antipsyc.cube + tot.betablock.cube +
+#                                  tot.propofol.cube + I(tot.dex.cube) + I(tot.pento.cube) +
+#                                  tot.clonid.cube + I(units.cryo) + I(units.plasma) +
+#                                  I(units.platelets) + I(units.prbc) + max.icp.dich + start.day,
+#                                data = tv.data.inhosp.icpd,
+#                                n.impute = 10)
+# 
+# set.seed(56)
+# areg.3yr.icpc <- aregImpute(~ age + gender + insurance.code + pt.marshall + pt.cerebral.na +
+#                               pt.epidural.na + iss + cpr.yn + mental.status + I(max.motor.imp) +
+#                               pupil.react.imp + min.glucose.imp + min.hemoglobin.imp +
+#                               min.sodium.imp + sofa.mod.nanormal.imp + tot.opioid.cube +
+#                               tot.benzo.cube + tot.antipsyc.cube + tot.betablock.cube +
+#                               tot.propofol.cube + I(tot.dex.cube) + I(tot.pento.cube) +
+#                               tot.clonid.cube + I(units.cryo) + I(units.plasma) +
+#                               I(units.platelets) + I(units.prbc) + max.icp.imp +
+#                               disposition.coded + vent.days + time.death.dc + start.day,
+#                             data = tv.data.3yr.icpc,
+#                             n.impute = 10)
+# 
+# set.seed(56)
+# areg.3yr.icpd <- aregImpute(~ age + gender + insurance.code + pt.marshall + pt.cerebral.na +
+#                               pt.epidural.na + iss + cpr.yn + mental.status + I(max.motor.imp) +
+#                               pupil.react.imp + min.glucose.imp + min.hemoglobin.imp +
+#                               min.sodium.imp + sofa.mod.nanormal.imp + tot.opioid.cube +
+#                               tot.benzo.cube + tot.antipsyc.cube + tot.betablock.cube +
+#                               tot.propofol.cube + I(tot.dex.cube) + I(tot.pento.cube) +
+#                               tot.clonid.cube + I(units.cryo) + I(units.plasma) +
+#                               I(units.platelets) + I(units.prbc) + max.icp.dich +
+#                               disposition.coded + vent.days + time.death.dc + start.day,
+#                             data = tv.data.3yr.icpd,
+#                             n.impute = 10)
+# 
+# save(areg.inhosp.icpc, areg.inhosp.icpd, areg.3yr.icpc, areg.3yr.icpd,
+#      file = file.path('AnalysisData', 'tbi_aregobj.Rdata'))
 
-set.seed(56)
-areg.inhosp.icpd <- aregImpute(~ age + gender + insurance.code + pt.marshall + pt.cerebral.na +
-                                 pt.epidural.na + iss + cpr.yn + mental.status + max.motor.imp +
-                                 pupil.react.imp + min.glucose.imp + min.hemoglobin.imp +
-                                 min.sodium.imp + sofa.mod.nanormal.imp + tot.opioid.cube +
-                                 tot.benzo.cube + tot.antipsyc.cube + tot.betablock.cube +
-                                 tot.propofol.cube + I(tot.dex.cube) + I(tot.pento.cube) +
-                                 tot.clonid.cube + I(units.cryo) + I(units.plasma) +
-                                 I(units.platelets) + I(units.prbc) + max.icp.dich + start.day,
-                               data = tv.data.inhosp.icpd,
-                               n.impute = 10)
-
-set.seed(56)
-areg.3yr.icpc <- aregImpute(~ age + gender + insurance.code + pt.marshall + pt.cerebral.na +
-                              pt.epidural.na + iss + cpr.yn + mental.status + I(max.motor.imp) +
-                              pupil.react.imp + min.glucose.imp + min.hemoglobin.imp +
-                              min.sodium.imp + sofa.mod.nanormal.imp + tot.opioid.cube +
-                              tot.benzo.cube + tot.antipsyc.cube + tot.betablock.cube +
-                              tot.propofol.cube + I(tot.dex.cube) + I(tot.pento.cube) +
-                              tot.clonid.cube + I(units.cryo) + I(units.plasma) +
-                              I(units.platelets) + I(units.prbc) + max.icp.imp +
-                              disposition.coded + vent.days + time.death.dc + start.day,
-                            data = tv.data.3yr.icpc,
-                            n.impute = 10)
-
-set.seed(56)
-areg.3yr.icpd <- aregImpute(~ age + gender + insurance.code + pt.marshall + pt.cerebral.na +
-                              pt.epidural.na + iss + cpr.yn + mental.status + I(max.motor.imp) +
-                              pupil.react.imp + min.glucose.imp + min.hemoglobin.imp +
-                              min.sodium.imp + sofa.mod.nanormal.imp + tot.opioid.cube +
-                              tot.benzo.cube + tot.antipsyc.cube + tot.betablock.cube +
-                              tot.propofol.cube + I(tot.dex.cube) + I(tot.pento.cube) +
-                              tot.clonid.cube + I(units.cryo) + I(units.plasma) +
-                              I(units.platelets) + I(units.prbc) + max.icp.dich +
-                              disposition.coded + vent.days + time.death.dc + start.day,
-                            data = tv.data.3yr.icpd,
-                            n.impute = 10)
-
-save(areg.inhosp.icpc, areg.inhosp.icpd, areg.3yr.icpc, areg.3yr.icpd,
-     file = file.path('AnalysisData', 'tbi_aregobj.Rdata'))
-
-# load(file.path('AnalysisData', 'tbi_aregobj.Rdata'))
+load(file.path('AnalysisData', 'tbi_aregobj.Rdata'))
 
 ## -- Model prep: Create Surv objects --------------------------------------------------------------
 surv.inhosp.icpc <-
@@ -340,7 +340,7 @@ betablock.predict$icp.f <- with(betablock.predict, factor(ifelse(icp == 'icpc', 
                                                                      'ICP, normal vs abnormal')))
 
 betablock.plot <- ggplot(data = betablock.predict, aes(x = tot.betablock.cube, y = yhat)) +
-  geom_ribbon(aes(ymin = lower, ymax = upper), fill = 'navy', alpha = 0.5) +
+  geom_ribbon(aes(ymin = lower, ymax = upper), fill = 'navy', alpha = 0.4) +
   geom_line(colour = 'navy') +
   facet_wrap(icp.f ~ time.f, scales = 'free') +
   xlab('24h Beta-Blockers, Cube Root') +
@@ -396,7 +396,7 @@ summary.daily <- summaryM(mental.status + max.motor + pupil.react + min.glucose 
 
 @
 
-Tables \ref{table:basestats} and \ref{table:inhosp.stats} present baseline and in-hospital
+Tables \ref{table:basestats} and \ref{table:inhospstats} present baseline and in-hospital
 characteristics of all patients with at least one day in the ICU, included in in-hospital mortality
 analyses, and all hospital survivors, included in 3-year mortality analyses. Table
 \ref{table:dailystats} presents descriptive statistics for daily variables for patient-days among
@@ -420,7 +420,7 @@ latex(summary.daily, file = '',
 @
 
 \clearpage
-\section{Model Type}
+\section{Model Specification}
 A full list of covariates included in each model is below. Because many of these covariates vary
 on a daily basis while in the hospital, we used time-varying Cox proportional hazards models for
 the analyses. Most continuous variables were allowed to have a nonlinear relationship with
@@ -522,7 +522,7 @@ latex(results.table[,1:4], file = '',
                        sum(tbi.oneobs.icu$hosp.death == 'Yes', na.rm = TRUE), ' Deaths'),
       cgroup = c('ICP = Continuous', 'ICP = Dichotomous'),
       n.cgroup = rep(2, 2),
-      colheads = rep(c('HR (CI)', 'P'), 2),
+      colheads = rep(c('HR (95\\% CI)', 'P'), 2),
       col.just = rep('r', 4))
 
 latex(results.table[,5:8], file = '',
@@ -535,7 +535,7 @@ latex(results.table[,5:8], file = '',
                        ' Deaths'),
       cgroup = c('ICP = Continuous', 'ICP = Dichotomous'),
       n.cgroup = rep(2, 2),
-      colheads = rep(c('HR (CI)', 'P'), 2),
+      colheads = rep(c('HR (95\\% CI)', 'P'), 2),
       col.just = rep('r', 4))
 
 @
