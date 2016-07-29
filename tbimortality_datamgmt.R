@@ -26,8 +26,20 @@ names(demog.data) <- gsub('_', '.', names(demog.data), fixed = TRUE)
 names(mr.data) <- gsub('_', '.', names(mr.data), fixed = TRUE)
 names(infusion.data) <- gsub('_', '.', names(infusion.data), fixed = TRUE)
 
+## -- Delete rows with completely missing data - artifact of data management error/fix -------------
+## These columns can have data: patient ID, REDCap event, "complete" variable
+mr.canhave <- c(1, 2, ncol(mr.data))
+mr.canthave <- setdiff(1:ncol(mr.data), mr.canhave)
+mr.data.miss <- rowSums(!is.na(mr.data[,mr.canthave])) == 0
+# mr.data <- mr.data[!mr.data.miss,]
+
+ck.mr.infusion <- merge(mr.data[mr.data.miss, c('mrn', 'redcap.event.name')], infusion.data,
+                        by = c('mrn', 'redcap.event.name'),
+                        all.x = TRUE, all.y = FALSE)
+
 ## -- Merge MR data and drug drip data for calculating drug totals ---------------------------------
-daily.data <- merge(mr.data, infusion.data, by = c('mrn', 'redcap.event.name'), all = TRUE)
+daily.data <- merge(mr.data[!mr.data.miss,], infusion.data,
+                    by = c('mrn', 'redcap.event.name'), all = TRUE)
 
 ## -- Add weight at baseline to daily data for use in SOFA CV, drug calculations -------------------
 base.wt.data <- subset(daily.data,
@@ -125,7 +137,7 @@ daily.data$sofa.renal <- with(daily.data, {
 ## Dichotomous version of maximum ICP: normal if score is <= 20, abnormal if > 20
 daily.data$max.icp.dich <-
   with(daily.data, factor(ifelse(is.na(max.icp) | max.icp <= 20, 1, 2),
-                          levels = 1:2, labels = c('Normal ICP (<=20)', 'Abnormal (>20)')))
+                          levels = 1:2, labels = c('Normal ICP (<=20 or missing)', 'Abnormal (>20)')))
 
 ## -- Impute closest value within X days before/after a missing date for several covariates --------
 ## Create numeric variable for study day
