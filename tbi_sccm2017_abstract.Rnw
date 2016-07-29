@@ -13,6 +13,7 @@
 \date{\today}
 
 \begin{document}
+\maketitle
 
 <<setup, echo = FALSE>>=
 opts_chunk$set(echo=FALSE, results='hide', warning=FALSE, message=FALSE, cache=FALSE, error=FALSE)
@@ -27,9 +28,31 @@ library(ggplot2)
 load(file.path('AnalysisData', 'tbi_datasets.Rdata'))
 source('tbi_timevarying.R')
 
+## -- Formatting functions -------------------------------------------------------------------------
+## Round and format a numeric value to the same number of digits
+rndformat <- function(x, ndig = 2){
+  format(round(x, digits = ndig), nsmall = ndig)
+}
+
+## Format a p-value
+formatp <- function(p){
+  ifelse(p < 0.0001, '<0.0001',
+  ifelse(p < 0.001, '<0.001',
+         rndformat(p, ndig = 3)))
+}
+
+## Create an HR (95% CI) using a row from summary.rms() output
+hr.ci.string <- function(sumrow){
+  paste0(rndformat(sumrow['Effect']), ' (',
+         rndformat(sumrow['Lower 0.95']), ', ',
+         rndformat(sumrow['Upper 0.95']), ')')
+}
+
 @
 
-All code used to create original analysis data sets can be found at
+The following preliminary analyses look at the association of mental status and beta-blockers on
+in-hospital and long-term mortality, adjusting for other covariates. All code used to create
+original analysis data sets can be found at
 
 \url{https://github.com/jenniferthompson/TBIMort/blob/master/tbimortality_datamgmt.R}
 
@@ -44,16 +67,24 @@ n.pts.icu <- length(pts.icu)
 tbi.oneobs.icu <- subset(tbi.oneobs, mrn %in% pts.icu)
 tbi.daily.icu <- subset(tbi.daily, mrn %in% pts.icu)
 
+## For 3-year mortality, restrict to patients who survived hospital
+hosp.survivors <- subset(tbi.oneobs.icu, hosp.death == 'No')$mrn
+
 ## -- Create time-varying data sets for each outcome -----------------------------------------------
 
 ## Create subset of daily data including only variables used in in-hospital mortality model
 tv.covars <- c('mental.status', 'max.motor.imp', 'pupil.react.imp', 'min.glucose.imp',
-               'min.hemoglobin.imp', 'min.sodium.imp', 'sofa.mod.nanormal.imp', 'tot.opioid',
-               'tot.benzo', 'tot.antipsyc', 'tot.betablock', 'tot.propofol', 'tot.dex', 'tot.pento',
-               'tot.clonid', 'units.cryo', 'units.plasma', 'units.platelets', 'units.prbc')
+               'min.hemoglobin.imp', 'min.sodium.imp', 'sofa.mod.nanormal.imp', 'tot.opioid.cube',
+               'tot.benzo.cube', 'tot.antipsyc.cube', 'tot.betablock.cube', 'tot.propofol.cube',
+               'tot.dex.cube', 'tot.pento.cube', 'tot.clonid.cube', 'units.cryo', 'units.plasma',
+               'units.platelets', 'units.prbc')
 
 tbi.daily.covars.icpc <- tbi.daily.icu[,c('mrn', 'study.day', tv.covars, 'max.icp.imp')]
 tbi.daily.covars.icpd <- tbi.daily.icu[,c('mrn', 'study.day', tv.covars, 'max.icp.dich')]
+tbi.daily.covars.3yr.icpc <- tbi.daily.icu[tbi.daily.icu$mrn %in% hosp.survivors,
+                                           c('mrn', 'study.day', tv.covars, 'max.icp.imp')]
+tbi.daily.covars.3yr.icpd <- tbi.daily.icu[tbi.daily.icu$mrn %in% hosp.survivors,
+                                           c('mrn', 'study.day', tv.covars, 'max.icp.dich')]
 
 ## In-hospital mortality ##
 tv.data.inhosp.icpc <- timevarying.data(idvar = 'mrn',
@@ -74,14 +105,14 @@ tv.data.inhosp.icpd <- timevarying.data(idvar = 'mrn',
 ## Three-year mortality ##
 tv.data.3yr.icpc <- timevarying.data(idvar = 'mrn',
                                      recvar = 'study.day',
-                                     org.data = tbi.daily.covars.icpc,
+                                     org.data = tbi.daily.covars.3yr.icpc,
                                      time.var = 'time.death.3yr',
                                      event.var = 'died.3yr',
                                      event.string = 'Yes',
                                      data.set = tbi.oneobs.icu)
 tv.data.3yr.icpd <- timevarying.data(idvar = 'mrn',
                                      recvar = 'study.day',
-                                     org.data = tbi.daily.covars.icpd,
+                                     org.data = tbi.daily.covars.3yr.icpd,
                                      time.var = 'time.death.3yr',
                                      event.var = 'died.3yr',
                                      event.string = 'Yes',
@@ -106,55 +137,105 @@ tv.data.3yr.icpd <- merge(tbi.oneobs.icu[,c('mrn', baseline.vars, longterm.vars)
                           tv.data.3yr.icpd,
                           by = 'mrn', all.x = FALSE, all.y = TRUE)
 
+## Refactor discharge disposition since no patients at 3yr followup have "Death in hospital"
+tv.data.3yr.icpc$disposition.coded <- factor(as.character(tv.data.3yr.icpc$disposition.coded))
+tv.data.3yr.icpd$disposition.coded <- factor(as.character(tv.data.3yr.icpd$disposition.coded))
+
 @
 
 <<modelfits>>=
-## -- Model prep: create aregImpute objects --------------------------------------------------------
-set.seed(56)
-areg.inhosp.icpc <- aregImpute(~ age + gender + insurance.code + pt.marshall + pt.cerebral.na +
-                                 pt.epidural.na + iss + cpr.yn + mental.status + max.motor.imp +
-                                 pupil.react.imp + min.glucose.imp + min.hemoglobin.imp +
-                                 min.sodium.imp + sofa.mod.nanormal.imp + tot.opioid + tot.benzo +
-                                 tot.antipsyc + tot.betablock + tot.propofol + I(tot.dex) +
-                                 I(tot.pento) + tot.clonid + I(units.cryo) + I(units.plasma) +
-                                 I(units.platelets) + I(units.prbc) + max.icp.imp + start.day,
-                               data = tv.data.inhosp.icpc,
-                               n.impute = 10)
+## -- Model prep: create datadist object to use for all models, ------------------------------------
+## -- using values from Inpatient Day 01 for all patients with >=1 day in ICU ----------------------
+dd.data <- merge(tbi.oneobs.icu[,c('mrn', baseline.vars, longterm.vars)],
+                 subset(tbi.daily.icu, study.day == 2),
+                 by = 'mrn', all = TRUE)
 
-set.seed(56)
-areg.inhosp.icpd <- aregImpute(~ age + gender + insurance.code + pt.marshall + pt.cerebral.na +
-                                 pt.epidural.na + iss + cpr.yn + mental.status + max.motor.imp +
-                                 pupil.react.imp + min.glucose.imp + min.hemoglobin.imp +
-                                 min.sodium.imp + sofa.mod.nanormal.imp + tot.opioid + tot.benzo +
-                                 tot.antipsyc + tot.betablock + tot.propofol + I(tot.dex) +
-                                 I(tot.pento) + tot.clonid + I(units.cryo) + I(units.plasma) +
-                                 I(units.platelets) + I(units.prbc) + max.icp.dich + start.day,
-                               data = tv.data.inhosp.icpd,
-                               n.impute = 10)
+## Since we're only interested in beta blockers for now, and 25th/75th percentiles are equal, set to
+## 10th and 90th percentiles instead
+pct.adjto <- c(0.10, 0.90)
+dd <- datadist(dd.data, q.effect = pct.adjto); options(datadist = 'dd')
 
-set.seed(56)
-areg.3yr.icpc <- aregImpute(~ age + gender + insurance.code + pt.marshall + pt.cerebral.na +
-                              pt.epidural.na + iss + cpr.yn + mental.status + max.motor.imp +
-                              pupil.react.imp + min.glucose.imp + min.hemoglobin.imp +
-                              min.sodium.imp + sofa.mod.nanormal.imp + tot.opioid + tot.benzo +
-                              tot.antipsyc + tot.betablock + tot.propofol + I(tot.dex) +
-                              I(tot.pento) + tot.clonid + I(units.cryo) + I(units.plasma) +
-                              I(units.platelets) + I(units.prbc) + max.icp.imp +
-                              disposition.coded + vent.days + time.death.dc + start.day,
-                            data = tv.data.3yr.icpc,
-                            n.impute = 10)
+## -- Model prep: Function to create matrix of HRs (CIs), p-vals for specific vars of interest ------
+create.results.matrix <- function(modobj){
+  anova.modobj <- anova(modobj)
+  summary.modobj <- summary(modobj)
+  
+  p.mental <- anova.modobj['mental.status', 'P']
+  p.betablock <- anova.modobj['tot.betablock.cube', 'P']
+  p.vec <- c(formatp(p.mental), '', '', formatp(p.betablock), '')
+  
+  hrci.del <- hr.ci.string(summary.modobj[grep('Delirious', rownames(summary.modobj)) + 1,])
+  hrci.coma <- hr.ci.string(summary.modobj[grep('Comatose', rownames(summary.modobj)) + 1,])
+  hrci.betablock <- hr.ci.string(summary.modobj[grep('betablock', rownames(summary.modobj)) + 1,])
+  hr.vec <- c('', hrci.del, hrci.coma, '', hrci.betablock)
+  
+  results.matrix <- cbind(hr.vec, p.vec)
+  rownames(results.matrix) <- c('Mental status', '~~~Delirium vs normal', '~~~Coma vs normal',
+                                '24h beta blockers, cube root',
+                                paste0('~~~', rndformat(dd$limits$tot.betablock.cube[3]), ' vs. ',
+                                       rndformat(dd$limits$tot.betablock.cube[1]),
+                                       ' (', pct.adjto[2]*100, 'th vs ',
+                                       pct.adjto[1]*100, 'th pctile)'))
+  
+  results.matrix
+}
 
-set.seed(56)
-areg.3yr.icpd <- aregImpute(~ age + gender + insurance.code + pt.marshall + pt.cerebral.na +
-                              pt.epidural.na + iss + cpr.yn + mental.status + max.motor.imp +
-                              pupil.react.imp + min.glucose.imp + min.hemoglobin.imp +
-                              min.sodium.imp + sofa.mod.nanormal.imp + tot.opioid + tot.benzo +
-                              tot.antipsyc + tot.betablock + tot.propofol + I(tot.dex) +
-                              I(tot.pento) + tot.clonid + I(units.cryo) + I(units.plasma) +
-                              I(units.platelets) + I(units.prbc) + max.icp.dich +
-                              disposition.coded + vent.days + time.death.dc + start.day,
-                            data = tv.data.3yr.icpd,
-                            n.impute = 10)
+
+## -- Model prep: create or load aregImpute objects ------------------------------------------------
+# set.seed(56)
+# areg.inhosp.icpc <- aregImpute(~ age + gender + insurance.code + pt.marshall + pt.cerebral.na +
+#                                  pt.epidural.na + iss + cpr.yn + mental.status + max.motor.imp +
+#                                  pupil.react.imp + min.glucose.imp + min.hemoglobin.imp +
+#                                  min.sodium.imp + sofa.mod.nanormal.imp + tot.opioid.cube +
+#                                  tot.benzo.cube + tot.antipsyc.cube + tot.betablock.cube +
+#                                  tot.propofol.cube + I(tot.dex.cube) + I(tot.pento.cube) +
+#                                  tot.clonid.cube + I(units.cryo) + I(units.plasma) +
+#                                  I(units.platelets) + I(units.prbc) + max.icp.imp + start.day,
+#                                data = tv.data.inhosp.icpc,
+#                                n.impute = 10)
+# 
+# set.seed(56)
+# areg.inhosp.icpd <- aregImpute(~ age + gender + insurance.code + pt.marshall + pt.cerebral.na +
+#                                  pt.epidural.na + iss + cpr.yn + mental.status + max.motor.imp +
+#                                  pupil.react.imp + min.glucose.imp + min.hemoglobin.imp +
+#                                  min.sodium.imp + sofa.mod.nanormal.imp + tot.opioid.cube +
+#                                  tot.benzo.cube + tot.antipsyc.cube + tot.betablock.cube +
+#                                  tot.propofol.cube + I(tot.dex.cube) + I(tot.pento.cube) +
+#                                  tot.clonid.cube + I(units.cryo) + I(units.plasma) +
+#                                  I(units.platelets) + I(units.prbc) + max.icp.dich + start.day,
+#                                data = tv.data.inhosp.icpd,
+#                                n.impute = 10)
+# 
+# set.seed(56)
+# areg.3yr.icpc <- aregImpute(~ age + gender + insurance.code + pt.marshall + pt.cerebral.na +
+#                               pt.epidural.na + iss + cpr.yn + mental.status + I(max.motor.imp) +
+#                               pupil.react.imp + min.glucose.imp + min.hemoglobin.imp +
+#                               min.sodium.imp + sofa.mod.nanormal.imp + tot.opioid.cube +
+#                               tot.benzo.cube + tot.antipsyc.cube + tot.betablock.cube +
+#                               tot.propofol.cube + I(tot.dex.cube) + I(tot.pento.cube) +
+#                               tot.clonid.cube + I(units.cryo) + I(units.plasma) +
+#                               I(units.platelets) + I(units.prbc) + max.icp.imp +
+#                               disposition.coded + vent.days + time.death.dc + start.day,
+#                             data = tv.data.3yr.icpc,
+#                             n.impute = 10)
+# 
+# set.seed(56)
+# areg.3yr.icpd <- aregImpute(~ age + gender + insurance.code + pt.marshall + pt.cerebral.na +
+#                               pt.epidural.na + iss + cpr.yn + mental.status + I(max.motor.imp) +
+#                               pupil.react.imp + min.glucose.imp + min.hemoglobin.imp +
+#                               min.sodium.imp + sofa.mod.nanormal.imp + tot.opioid.cube +
+#                               tot.benzo.cube + tot.antipsyc.cube + tot.betablock.cube +
+#                               tot.propofol.cube + I(tot.dex.cube) + I(tot.pento.cube) +
+#                               tot.clonid.cube + I(units.cryo) + I(units.plasma) +
+#                               I(units.platelets) + I(units.prbc) + max.icp.dich +
+#                               disposition.coded + vent.days + time.death.dc + start.day,
+#                             data = tv.data.3yr.icpd,
+#                             n.impute = 10)
+# 
+# save(areg.inhosp.icpc, areg.inhosp.icpd, areg.3yr.icpc, areg.3yr.icpd,
+#      file = file.path('AnalysisData', 'tbi_aregobj.Rdata'))
+
+load(file.path('AnalysisData', 'tbi_aregobj.Rdata'))
 
 ## -- Model prep: Create Surv objects --------------------------------------------------------------
 surv.inhosp.icpc <-
@@ -166,7 +247,298 @@ surv.3yr.icpc <-
 surv.3yr.icpd <-
   with(tv.data.3yr.icpd, Surv(time = start.day, time2 = stop.day, event = as.numeric(had.event)))
 
+## -- Run models -----------------------------------------------------------------------------------
+mod.inhosp.icpc <- fit.mult.impute(surv.inhosp.icpc ~ rcs(age, 3) + gender + insurance.code +
+                                     pt.marshall + pt.cerebral.na + pt.epidural.na + iss + cpr.yn +
+                                     mental.status + max.motor.imp + pupil.react.imp +
+                                     rcs(min.glucose.imp, 3) + rcs(min.hemoglobin.imp, 3) +
+                                     rcs(min.sodium.imp, 3) + rcs(sofa.mod.nanormal.imp, 3) +
+                                     rcs(tot.opioid.cube, 3) + rcs(tot.benzo.cube, 3) +
+                                     rcs(tot.antipsyc.cube, 3) + rcs(tot.betablock.cube, 3) +
+                                     rcs(tot.propofol.cube, 3) + tot.dex.cube + tot.pento.cube +
+                                     rcs(tot.clonid.cube, 3) + units.cryo + units.plasma +
+                                     units.platelets + units.prbc + rcs(max.icp.imp, 3),
+                                   fitter = cph,
+                                   xtrans = areg.inhosp.icpc,
+                                   data = tv.data.inhosp.icpc)
+
+mod.inhosp.icpd <- fit.mult.impute(surv.inhosp.icpd ~ rcs(age, 3) + gender + insurance.code +
+                                     pt.marshall + pt.cerebral.na + pt.epidural.na + iss + cpr.yn +
+                                     mental.status + max.motor.imp + pupil.react.imp +
+                                     rcs(min.glucose.imp, 3) + rcs(min.hemoglobin.imp, 3) +
+                                     rcs(min.sodium.imp, 3) + rcs(sofa.mod.nanormal.imp, 3) +
+                                     rcs(tot.opioid.cube, 3) + rcs(tot.benzo.cube, 3) +
+                                     rcs(tot.antipsyc.cube, 3) + rcs(tot.betablock.cube, 3) +
+                                     rcs(tot.propofol.cube, 3) + tot.dex.cube + tot.pento.cube +
+                                     rcs(tot.clonid.cube, 3) + units.cryo + units.plasma +
+                                     units.platelets + units.prbc + max.icp.dich,
+                                   fitter = cph,
+                                   xtrans = areg.inhosp.icpd,
+                                   data = tv.data.inhosp.icpd)
+
+mod.3yr.icpc <- fit.mult.impute(surv.3yr.icpc ~ rcs(age, 3) + gender + insurance.code +
+                                  pt.marshall + pt.cerebral.na + pt.epidural.na + iss + cpr.yn +
+                                  disposition.coded + vent.days + time.death.dc + mental.status +
+                                  max.motor.imp + pupil.react.imp + rcs(min.glucose.imp, 3) +
+                                  rcs(min.hemoglobin.imp, 3) + rcs(min.sodium.imp, 3) +
+                                  rcs(sofa.mod.nanormal.imp, 3) + rcs(tot.opioid.cube, 3) +
+                                  rcs(tot.benzo.cube, 3) + rcs(tot.antipsyc.cube, 3) +
+                                  rcs(tot.betablock.cube, 3) + rcs(tot.propofol.cube, 3) +
+                                  tot.dex.cube + tot.pento.cube + rcs(tot.clonid.cube, 3) +
+                                  units.cryo + units.plasma + units.platelets + units.prbc +
+                                  rcs(max.icp.imp, 3),
+                                fitter = cph,
+                                xtrans = areg.3yr.icpc,
+                                data = tv.data.3yr.icpc)
+
+mod.3yr.icpd <- fit.mult.impute(surv.3yr.icpd ~ rcs(age, 3) + gender + insurance.code +
+                                  pt.marshall + pt.cerebral.na + pt.epidural.na + iss + cpr.yn +
+                                  disposition.coded + vent.days + time.death.dc + mental.status +
+                                  max.motor.imp + pupil.react.imp + rcs(min.glucose.imp, 3) +
+                                  rcs(min.hemoglobin.imp, 3) + rcs(min.sodium.imp, 3) +
+                                  rcs(sofa.mod.nanormal.imp, 3) + rcs(tot.opioid.cube, 3) +
+                                  rcs(tot.benzo.cube, 3) + rcs(tot.antipsyc.cube, 3) +
+                                  rcs(tot.betablock.cube, 3) + rcs(tot.propofol.cube, 3) +
+                                  tot.dex.cube + tot.pento.cube + rcs(tot.clonid.cube, 3) +
+                                  units.cryo + units.plasma + units.platelets + units.prbc +
+                                  max.icp.dich,
+                                fitter = cph,
+                                xtrans = areg.3yr.icpd,
+                                data = tv.data.3yr.icpd)
+
+mod.list <- list(mod.inhosp.icpc, mod.inhosp.icpd, mod.3yr.icpc, mod.3yr.icpd)
+names(mod.list) <- c('mod.inhosp.icpc', 'mod.inhosp.icpd', 'mod.3yr.icpc', 'mod.3yr.icpd')
+
+## -- Create table of results ----------------------------------------------------------------------
+results.table <- do.call(cbind, lapply(mod.list, FUN = create.results.matrix))
+colnames(results.table) <- paste(colnames(results.table),
+                                 c('inhosp.icpc', 'inhosp.icpc', 'inhosp.icpd', 'inhosp.icpd',
+                                   '3yr.icpc', '3yr.icpc', '3yr.icpd', '3yr.icpd'),
+                                 sep = '.')
+colnames(results.table) <- gsub('\\.vec', '', colnames(results.table))
+
+## -- Create four-facet figure showing association between beta-blockers and hazard of death -------
+betablock.predict <- do.call(rbind,
+                             lapply(1:length(mod.list),
+                                    FUN = function(m){
+                                      tmp <- as.data.frame(Predict(mod.list[[m]],
+                                                                   tot.betablock.cube = NA,
+                                                                   fun = exp))
+                                      tmp <- tmp[,c('tot.betablock.cube', 'yhat', 'lower', 'upper')]
+                                      time.icp <- strsplit(names(mod.list)[m], '\\.')[[1]]
+                                      tmp$time <- time.icp[2]
+                                      tmp$icp <- time.icp[3]
+                                      tmp
+                                    }))
+betablock.predict$time.f <- with(betablock.predict, factor(ifelse(time == 'inhosp', 1, 2),
+                                                           levels = 1:2,
+                                                           labels = c('In-Hospital Mortality',
+                                                                      '3-Year Mortality')))
+betablock.predict$icp.f <- with(betablock.predict, factor(ifelse(icp == 'icpc', 1, 2),
+                                                          levels = 1:2,
+                                                          labels = c('ICP, original scale',
+                                                                     'ICP, normal vs abnormal')))
+
+betablock.plot <- ggplot(data = betablock.predict, aes(x = tot.betablock.cube, y = yhat)) +
+  geom_ribbon(aes(ymin = lower, ymax = upper), fill = 'navy', alpha = 0.5) +
+  geom_line(colour = 'navy') +
+  facet_wrap(icp.f ~ time.f, scales = 'free') +
+  xlab('24h Beta-Blockers, Cube Root') +
+  ylab('Hazard of Death')
+
 @
 
+\section{Cohorts}
+<<prepdescstats>>=
+oneobs.stats <- rbind(tbi.oneobs.icu, subset(tbi.oneobs.icu, mrn %in% hosp.survivors))
+oneobs.stats$cohort <- factor(c(rep(1, nrow(tbi.oneobs.icu)),
+                                rep(2, sum(tbi.oneobs.icu$hosp.death == 'No', na.rm = TRUE))),
+                              levels = 1:2,
+                              labels = c('Patients with >=1 ICU Day',
+                                         'Hospital Survivors with >=1 ICU Day'))
+## Not sure why these labels don't transfer
+label(oneobs.stats$gender) <- 'Gender'
+label(oneobs.stats$insurance.code) <- 'Insurance'
+label(oneobs.stats$cpr.yn) <- 'CPR'
+label(oneobs.stats$pt.marshall) <- 'Marshall Class'
+label(oneobs.stats$disposition.coded) <- 'Discharge disposition'
+label(oneobs.stats$hosp.death) <- 'Died in hospital'
+label(oneobs.stats$died.3yr) <- 'Died before 3-year mark'
+
+summary.base <- summaryM(age + gender + race + insurance.code + iss + cpr.yn + pt.marshall +
+                           pt.cerebral + pt.epidural + pt.injury + base.weight +
+                           base.motor ~ cohort,
+                         data = oneobs.stats)
+summary.inhosp <- summaryM(days.mental + days.del + days.coma + vent.days + icu.los +
+                             disposition.coded + time.death.inhosp + time.death.dc + hosp.death +
+                             time.death.3yr + died.3yr ~ cohort,
+                           data = oneobs.stats)
+
+daily.stats <- rbind(tbi.daily.icu, subset(tbi.daily.icu, mrn %in% hosp.survivors))
+daily.stats$cohort <- factor(c(rep(1, nrow(tbi.daily.icu)),
+                               rep(2, sum(tbi.daily.icu$mrn %in% hosp.survivors, na.rm = TRUE))),
+                             levels = 1:2,
+                             labels = c('Patients with >=1 ICU Day',
+                                        'Hospital Survivors with >=1 ICU Day'))
+
+label(daily.stats$mental.status) <- 'Mental status'
+label(daily.stats$pupil.react) <- 'Pupil reactivity'
+label(daily.stats$max.icp.dich) <- 'Maximum ICP, dichotomized'
+label(daily.stats$sofa.nanormal.imp) <- 'Daily SOFA, missing component = normal'
+label(daily.stats$sofa.mod.nanormal.imp) <- 'Daily modified SOFA, missing component = normal'
+
+summary.daily <- summaryM(mental.status + max.motor + pupil.react + min.glucose + min.hemoglobin +
+                            min.sodium + max.icp + max.icp.dich + sofa.nanormal.imp +
+                            sofa.mod.nanormal.imp + tot.benzo + tot.opioid + tot.propofol + tot.dex +
+                            tot.antipsyc + tot.betablock + tot.pento + tot.clonid + units.cryo +
+                            units.plasma + units.platelets + units.prbc ~ cohort,
+                          data = daily.stats)
+
+@
+
+Tables \ref{table:basestats} and \ref{table:inhosp.stats} present baseline and in-hospital
+characteristics of all patients with at least one day in the ICU, included in in-hospital mortality
+analyses, and all hospital survivors, included in 3-year mortality analyses. Table
+\ref{table:dailystats} presents descriptive statistics for daily variables for patient-days among
+the same cohorts. All descriptive statistics represent raw, non-imputed data except where noted.
+
+<<printdescstats, results = 'asis'>>=
+latex(summary.base, file = '',
+      digits = 2, where = '!h', label = 'table:basestats', prmsd = TRUE, what = '%', prn = FALSE,
+      npct = 'both', exclude1 = FALSE, long = TRUE, caption = 'Baseline Characteristics by Cohort')
+
+latex(summary.inhosp, file = '',
+      digits = 2, where = '!h', label = 'table:inhospstats', prmsd = TRUE, what = '%', prn = FALSE,
+      npct = 'both', exclude1 = FALSE, long = TRUE,
+      caption = 'Hospital Stay Characteristics by Cohort')
+
+latex(summary.daily, file = '',
+      digits = 2, where = '!h', label = 'table:dailystats', prmsd = TRUE, what = '%', prn = FALSE,
+      npct = 'both', exclude1 = FALSE, long = TRUE, size = 'small',
+      caption = 'Patient-Day Characteristics by Cohort')
+
+@
+
+\clearpage
+\section{Model Type}
+A full list of covariates included in each model is below. Because many of these covariates vary
+on a daily basis while in the hospital, we used time-varying Cox proportional hazards models for
+the analyses. Most continuous variables were allowed to have a nonlinear relationship with
+mortality; the following variables were forced to be linear because there were too few unique
+values to incorporate restricted cubic splines: maximum motor score, dexmedetomidine, pentobarbital,
+and all blood products.
+
+\begin{itemize}
+\item Baseline:
+  \begin{itemize}
+  \item Age
+  \item Gender
+  \item Insurance code (private, public, self-pay/none, workers comp)
+  \item Marshall class
+  \item Cerebral subarachnoid hemorrhage
+  \item Cerebral extra/epidural mass
+  \item Injury Severity Score (ISS)
+  \item Whether CPR performed
+  \end{itemize}
+\item Daily:
+  \begin{itemize}
+  \item Mental status (normal, delirious, comatose)
+  \item Maximum motor score
+  \item Pupil reactivity (one reactive, both reactive, both fixed)
+  \item Minimum glucose
+  \item Minimum hemoglobin
+  \item Minimum sodium
+  \item Modified SOFA (no CNS component, since we adjust for mental status separately)
+  \item Maximum intracranial pressure:
+    \begin{enumerate}
+    \item Primary analysis: treated as continuous variable
+    \item Sensitivity analysis: normal/abnormal, since there was so much variability in abnormal values
+    \end{enumerate}
+  \item 24h drug doses, all transformed using the cube root to reduce impact of extreme values:
+    \begin{itemize}
+    \item Opioids, fentanyl equivalents
+    \item Benzodiazepines, midazolam equivalents
+    \item Antipsychotics, haloperidol equivalents
+    \item Beta-blockers
+    \item Propofol
+    \item Dexmedetomidine
+    \item Pentobarbital
+    \item Clonidine
+    \end{itemize}
+  \item Blood products: units of cryoprecipitate, plasma, platelets, and PRBC
+  \end{itemize}
+\item Hospital stay variables (for 3-year mortality only):
+  \begin{itemize}
+  \item Discharge disposition (home, hospice, inpatient rehab, jail/prison, nursing care,
+  psych unit, transfer to other hospital)
+  \item Days on mechanical ventilation
+  \item Days in the hospital
+  \end{itemize}
+\end{itemize}
+
+\clearpage
+\section{Missingness}
+Since this is a combination of clinical databases compiled from the medical record, there is quite
+a bit of missing data. We used a combination of approaches to handle this.
+
+First, for several daily variables listed below: If a given day was missing, we looked up to two
+days before and after the missing day and took the closest value available (prioritizing ``before"
+over ``after", if both were available).
+
+\begin{itemize}
+\item Maximum motor score
+\item Pupil reactivity
+\item Minimum glucose
+\item Minimum hemoglobin
+\item Minimum sodium
+\item All SOFA components
+\end{itemize}
+
+If any SOFA components were still missing, we assumed that the quantities needed were not measured
+because there was no clinical suspicion of organ failure and imputed a component score of 0.
+
+Because missingness for intracranial pressure (ICP) is highly informative, if a value was missing,
+we imputed a random value uniformly distributed between 0-20 (considered the range of ``normal"
+values).
+
+Since there was still missing data after performing the above single imputation, we used multiple
+imputation (predictive mean matching) at the time of our model fit.
+
+\clearpage
+\section{Results}
+Tables \ref{table:results.inhosp} and \ref{table:results.3yr} present p-values and hazard ratios
+(95\% CIs) for mental status and 24-hour dose of beta-blockers (cube root transformed). Because the
+relationship between beta-blockers and mortality is allowed to be nonlinear, one hazard ratio does
+not fully describe the relationship; here, the 90th and 10th percentiles of all patient-days' doses
+are compared as a reference point. Figure \ref{fig:betablockplot} gives a more complete picture of
+these relationships.
+
+<<printresults, results = 'asis'>>=
+latex(results.table[,1:4], file = '',
+      where = '!h',
+      title = '',
+      label = 'table:results.inhosp',
+      caption = 'In-Hospital Mortality',
+      cgroup = c('ICP = Continuous', 'ICP = Dichotomous'),
+      n.cgroup = rep(2, 2),
+      colheads = rep(c('HR (CI)', 'P'), 2),
+      col.just = rep('r', 4))
+
+latex(results.table[,5:8], file = '',
+      where = '!h',
+      title = '',
+      label = 'table:results.3yr',
+      caption = '3-Year Mortality',
+      cgroup = c('ICP = Continuous', 'ICP = Dichotomous'),
+      n.cgroup = rep(2, 2),
+      colheads = rep(c('HR (CI)', 'P'), 2),
+      col.just = rep('r', 4))
+
+@
+
+<<betablockplot, results = 'asis', fig.cap = '24-Hour Beta-Blocker Dose vs Mortality', fig.align = 'center', fig.pos = '!h'>>=
+betablock.plot
+
+@
 
 \end{document}
