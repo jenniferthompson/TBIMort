@@ -99,7 +99,7 @@ daily.data$sofa.cv <- with(daily.data, {
            (!is.na(drip.epi) & drip.epi > 0) |
            (!is.na(drip.norepi) & drip.norepi > 0), 3,
   ifelse((!is.na(drip.dopa) & drip.dopa > 0) |
-           (!is.na(drip.dobu) & drip.dobu > 0) | 
+           (!is.na(drip.dobu) & drip.dobu > 0) |
            (!is.na(drip.milri) & drip.milri > 0) |
            (!is.na(drip.vaso) & drip.vaso > 0) |
            (!is.na(drip.phenyleph) & drip.phenyleph > 0), 2,
@@ -147,11 +147,11 @@ daily.data$study.day <- as.numeric(gsub('Inpatient Day ', '', daily.data$redcap.
 imputer <- function(d1, ## study day or date vector 1 - records that are missing
                     d2, ## study day or date vector 2 - records that are not missing
                     win = 2){ ## number of days to look behind/ahead
-  
+
   if(class(d1) != class(d2)){
     stop('d1 and d2 must be of same class')
   }
-  
+
   ## Create matrix of number of days apart for each missing record vs non-missing records
   ## Columns = each missing row
   ## Rows = distance of each non-missing row from missing row
@@ -160,17 +160,17 @@ imputer <- function(d1, ## study day or date vector 1 - records that are missing
   } else if(class(d1) %in% c('numeric', 'integer')){
     d3 <- sapply(d1, FUN = function(d){abs(d - d2)})
   }
-  
+
   ## If only non-missing day is day 0, sapply returns a vector; force to be a matrix
   if(!is.matrix(d3)){
     d3 <- matrix(d3, nrow = 1)
   }
-  
+
   ## For each column (missing row), get closest non-missing row within "win" days
   apply(d3, 2, function(i) {
     ## Set all non-missing rows > win days away to NA
     i[abs(i) > win] <- NA
-    
+
     if(all(is.na(i))){
       return(NA)
     } else{
@@ -183,22 +183,22 @@ imputer <- function(d1, ## study day or date vector 1 - records that are missing
 impute.closest <- function(dataset, ## data set to use - assumes all records are from same ID
                            dayvar,  ## study day/date variable name
                            impvar){ ## name of variable to impute
-  
+
   ## T/F vector indicating whether impvar is missing
   m <- is.na(dataset[, impvar])
-  
+
   ## If any records are missing, replace NA with imputed value
   dataset[,paste0(impvar, '.imp')] <- dataset[,impvar]
-  
+
   if(any(m) & !all(m)){
     ix <- imputer(dataset[m, dayvar], dataset[!m, dayvar], win = 2)
-    
+
     if(any(!is.na(ix))) {
       impvar.imp <- dataset[which(!m)[ix], impvar]
       dataset[m, paste0(impvar, '.imp')] <- dataset[which(!m)[ix], impvar]
     }
   }
-  
+
   dataset
 }
 
@@ -245,6 +245,7 @@ impute.normal <- function(x, min.val, max.val){
   }
 }
 
+set.seed(56)
 daily.data$max.icp.imp <- apply(as.matrix(daily.data$max.icp),
                                 MARGIN = 1,
                                 FUN = impute.normal, min.val = 0, max.val = 20)
