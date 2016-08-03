@@ -7,6 +7,7 @@
 \usepackage{longtable}
 \usepackage[margin = 0.425in]{geometry}
 \usepackage{hyperref}
+\usepackage{pdflscape}
 
 \title{SCCM 2017 Abstract Submission: In-Hospital and 3-Year Mortality Among TBI Patients with $\ge$ 1 Day in ICU}
 \author{Jennifer Thompson, MPH; Supervisor: Rameela Chandrasekhar, PhD}
@@ -59,6 +60,9 @@ original analysis data sets can be found at
 The datasets were created at \Sexpr{datasets.created.at},  using raw data exported from REDCap.
 
 <<datamgmt>>=
+## -- Relevel CPR; original labels are very long, cause formatting issues --------------------------
+levels(tbi.oneobs$cpr.yn) <- c('No', 'Yes')
+
 ## -- Restrict patients to only those with >=1 day in the ICU --------------------------------------
 n.pts.org <- length(unique(tbi.oneobs$mrn))
 pts.icu <- unique(subset(tbi.oneobs, icu.los > 0))$mrn
@@ -159,24 +163,65 @@ dd <- datadist(dd.data, q.effect = pct.adjto); options(datadist = 'dd')
 create.results.matrix <- function(modobj){
   anova.modobj <- anova(modobj)
   summary.modobj <- summary(modobj)
-  
+
+  paste.quants <- function(var, inc.pcts = FALSE){
+    tmp <- paste0(rndformat(dd$limits[[var]][3]), ' vs. ', rndformat(dd$limits[[var]][1]))
+    if(inc.pcts){
+      tmp <- paste0('~~~', tmp, ' (', pct.adjto[2]*100, 'th vs ', pct.adjto[1]*100, 'th pctile)')
+    }
+
+    tmp
+  }
+
   p.mental <- anova.modobj['mental.status', 'P']
   p.betablock <- anova.modobj['tot.betablock.cube', 'P']
-  p.vec <- c(formatp(p.mental), '', '', formatp(p.betablock), '')
-  
+  p.opioid <- anova(modobj)['tot.opioid.cube', 'P']
+  p.benzo <- anova(modobj)['tot.benzo.cube', 'P']
+  p.antipsyc <- anova(modobj)['tot.antipsyc.cube', 'P']
+  p.propofol <- anova(modobj)['tot.propofol.cube', 'P']
+  p.dex <- anova(modobj)['tot.dex.cube', 'P']
+  p.pento <- anova(modobj)['tot.pento.cube', 'P']
+  p.clonid <- anova(modobj)['tot.clonid.cube', 'P']
+  p.insurance <- anova(modobj)['insurance.code', 'P']
+  p.vec <- c(formatp(p.mental), '', '', formatp(p.betablock), '', formatp(p.opioid), formatp(p.benzo),
+             formatp(p.antipsyc), formatp(p.propofol), formatp(p.dex), formatp(p.pento),
+             formatp(p.clonid), formatp(p.insurance), '', '', '')
+
   hrci.del <- hr.ci.string(summary.modobj[grep('Delirious', rownames(summary.modobj)) + 1,])
   hrci.coma <- hr.ci.string(summary.modobj[grep('Comatose', rownames(summary.modobj)) + 1,])
   hrci.betablock <- hr.ci.string(summary.modobj[grep('betablock', rownames(summary.modobj)) + 1,])
-  hr.vec <- c('', hrci.del, hrci.coma, '', hrci.betablock)
-  
+  hrci.opioid <- hr.ci.string(summary.modobj[grep('opioid', rownames(summary.modobj)) + 1,])
+  hrci.benzo <- hr.ci.string(summary.modobj[grep('benzo', rownames(summary.modobj)) + 1,])
+  hrci.antipsyc <- hr.ci.string(summary.modobj[grep('antipsyc', rownames(summary.modobj)) + 1,])
+  hrci.propofol <- hr.ci.string(summary.modobj[grep('propofol', rownames(summary.modobj)) + 1,])
+  hrci.dex <- hr.ci.string(summary.modobj[grep('dex', rownames(summary.modobj)) + 1,])
+  hrci.pento <- hr.ci.string(summary.modobj[grep('pento', rownames(summary.modobj)) + 1,])
+  hrci.clonid <- hr.ci.string(summary.modobj[grep('clonid', rownames(summary.modobj)) + 1,])
+  hrci.ins.public <- hr.ci.string(summary.modobj[grep('Public', rownames(summary.modobj)) + 1,])
+  hrci.ins.none <- hr.ci.string(summary.modobj[grep('Self Pay', rownames(summary.modobj)) + 1,])
+  hrci.ins.wc <- hr.ci.string(summary.modobj[grep('Workers Comp', rownames(summary.modobj)) + 1,])
+  hr.vec <- c('', hrci.del, hrci.coma, '', hrci.betablock, hrci.opioid, hrci.benzo, hrci.antipsyc,
+              hrci.propofol, hrci.dex, hrci.pento, hrci.clonid, '', hrci.ins.public, hrci.ins.none,
+              hrci.ins.wc)
+
   results.matrix <- cbind(hr.vec, p.vec)
   rownames(results.matrix) <- c('Mental status', '~~~Delirium vs normal', '~~~Coma vs normal',
                                 '24h beta blockers, cube root',
-                                paste0('~~~', rndformat(dd$limits$tot.betablock.cube[3]), ' vs. ',
-                                       rndformat(dd$limits$tot.betablock.cube[1]),
-                                       ' (', pct.adjto[2]*100, 'th vs ',
-                                       pct.adjto[1]*100, 'th pctile)'))
-  
+                                paste.quants('tot.betablock.cube', TRUE),
+                                paste0('24h opioids, cube root; ', paste.quants('tot.opioid.cube')),
+                                paste0('24h benzos, cube root; ', paste.quants('tot.benzo.cube')),
+                                paste0('24h antipsychotics, cube root; ',
+                                       paste.quants('tot.antipsyc.cube')),
+                                paste0('24h propofol, cube root; ',
+                                       paste.quants('tot.propofol.cube')),
+                                paste0('24h dex, cube root; ', paste.quants('tot.dex.cube')),
+                                paste0('24h pentobarbital, cube root; ',
+                                       paste.quants('tot.pento.cube')),
+                                paste0('24h clonidine, cube root; ', paste.quants('tot.clonid.cube')),
+                                'Insurance', '~~~Public vs private',
+                                '~~~Self-pay or none vs private',
+                                '~~~Workers comp vs private')
+
   results.matrix
 }
 
@@ -193,7 +238,7 @@ create.results.matrix <- function(modobj){
 #                                  I(units.platelets) + I(units.prbc) + max.icp.imp + start.day,
 #                                data = tv.data.inhosp.icpc,
 #                                n.impute = 10)
-# 
+#
 # set.seed(56)
 # areg.inhosp.icpd <- aregImpute(~ age + gender + insurance.code + pt.marshall + pt.cerebral.na +
 #                                  pt.epidural.na + iss + cpr.yn + mental.status + max.motor.imp +
@@ -205,7 +250,7 @@ create.results.matrix <- function(modobj){
 #                                  I(units.platelets) + I(units.prbc) + max.icp.dich + start.day,
 #                                data = tv.data.inhosp.icpd,
 #                                n.impute = 10)
-# 
+#
 # set.seed(56)
 # areg.3yr.icpc <- aregImpute(~ age + gender + insurance.code + pt.marshall + pt.cerebral.na +
 #                               pt.epidural.na + iss + cpr.yn + mental.status + I(max.motor.imp) +
@@ -218,7 +263,7 @@ create.results.matrix <- function(modobj){
 #                               disposition.coded + vent.days + time.death.dc + start.day,
 #                             data = tv.data.3yr.icpc,
 #                             n.impute = 10)
-# 
+#
 # set.seed(56)
 # areg.3yr.icpd <- aregImpute(~ age + gender + insurance.code + pt.marshall + pt.cerebral.na +
 #                               pt.epidural.na + iss + cpr.yn + mental.status + I(max.motor.imp) +
@@ -231,7 +276,7 @@ create.results.matrix <- function(modobj){
 #                               disposition.coded + vent.days + time.death.dc + start.day,
 #                             data = tv.data.3yr.icpd,
 #                             n.impute = 10)
-# 
+#
 # save(areg.inhosp.icpc, areg.inhosp.icpd, areg.3yr.icpc, areg.3yr.icpd,
 #      file = file.path('AnalysisData', 'tbi_aregobj.Rdata'))
 
