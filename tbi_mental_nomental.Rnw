@@ -8,7 +8,7 @@
 \usepackage[margin = 0.425in]{geometry}
 \usepackage{hyperref}
 
-\title{Patients with and without Mental Status Data, TBI Cohort}
+\title{Exploratory Analyses of Mental Status, TBI Cohort}
 \date{\today}
 
 \begin{document}
@@ -22,6 +22,8 @@ options(replace.assign = TRUE, width = 90)
 ## Load libraries
 library(Hmisc)
 library(ggplot2)
+library(dplyr)
+library(tidyr)
 
 load(file.path('AnalysisData', 'tbi_datasets.Rdata'))
 
@@ -81,6 +83,7 @@ multiplot <- function(..., plotlist=NULL, file, cols=1, layout=NULL) {
     }
   }
 }
+
 @
 
 
@@ -304,6 +307,125 @@ latex(daily.summary.2,
 multiplot(plotlist = daily.plotlist[1:10], layout = matrix(1:10, ncol = 2))
 multiplot(plotlist = daily.plotlist[11:20], layout = matrix(1:10, ncol = 2))
 multiplot(plotlist = daily.plotlist[21:28], layout = matrix(1:8, ncol = 2))
+
+@
+
+\section{Status by Study Day}
+<<plotsbystudyday>>=
+## -- Create data set of status up to 30 days after enrollment (N, D, C, died, discharged) ---------
+## List of all IDs
+all.mrns <- unique(unique(tbi.oneobs$mrn), unique(tbi.daily$mrn))
+
+## Need to create new study day variable that isn't labeled (attr(,'label') <- NULL wasn't working)
+tbi.daily$new.study.day <- as.numeric(tbi.daily$study.day)
+
+tbi.daily.status <-
+  ## Create dummy data set for each ID
+  bind_rows(lapply(all.mrns, FUN = function(id){
+    data.frame(mrn = rep(id, 31), study.day = 1:31) })) %>%
+  ## Add on mental status as recorded
+  left_join(select(tbi.daily, mrn, event, new.study.day, mental.status),
+            by = c('mrn', 'study.day' = 'new.study.day')) %>%
+  ## Add on death and hospital discharge information
+  left_join(select(tbi.oneobs, mrn, icu.los, los, hosp.death, died.3yr, time.death.3yr),
+            by = 'mrn') %>%
+  ## Create indicator for whether day was after patient was discharged
+  ## Create overall status variable: mental + died, discharged, unknown
+  mutate(after.discharge = !is.na(los) & (study.day - 1) > los,
+         daily.status = factor(ifelse(!is.na(mental.status) & mental.status == 'Normal', 2,
+                               ifelse(!is.na(mental.status) & mental.status == 'Delirious', 3,
+                               ifelse(!is.na(mental.status) & mental.status == 'Comatose', 4,
+                               ifelse(!is.na(hosp.death) & hosp.death == 'Yes' & after.discharge, 5,
+                               ifelse(!is.na(died.3yr) & died.3yr == 'Yes' &
+                                        !is.na(time.death.3yr) & time.death.3yr < (study.day + 1),
+                                      5,
+                               ifelse(!is.na(hosp.death) & hosp.death == 'No' & after.discharge, 1,
+                                      6)))))),
+                               levels = 1:6,
+                               labels = c('Discharged', 'Normal', 'Delirious',
+                                          'Comatose', 'Deceased', 'Unknown')))
+
+## Histogram of daily status by study day, all patients
+hist.status.all <- ggplot(data = tbi.daily.status, aes(x = study.day, fill = daily.status)) +
+  facet_wrap(~ daily.status, nrow = 1) +
+  geom_histogram(binwidth = 1) +
+  scale_fill_discrete(guide = 'none', c = 75) +
+  ggtitle('Patient Status by Study Day, All TBI Patients')
+
+## Histogram of daily status by study day, patients ever in the ICU
+hist.status.icu <- ggplot(data = subset(tbi.daily.status, icu.los > 0),
+                          aes(x = study.day, fill = daily.status)) +
+  facet_wrap(~ daily.status, nrow = 1) +
+  geom_histogram(binwidth = 1) +
+  scale_fill_discrete(guide = 'none', c = 75) +
+  ggtitle('Patient Status by Study Day, TBI Patients with >=1 ICU Day')
+
+## Histogram of daily status by study day, patients in the ICU <=10 days
+hist.status.icu10 <- ggplot(data = subset(tbi.daily.status, icu.los > 0 & icu.los <= 10),
+                            aes(x = study.day, fill = daily.status)) +
+  facet_wrap(~ daily.status, nrow = 1) +
+  geom_histogram(binwidth = 1) +
+  scale_fill_discrete(guide = 'none', c = 75) +
+  ggtitle('Patient Status by Study Day, TBI Patients in ICU but <= 10 Days')
+
+## Out of days where patient should have had assessment (not discharged or dead), look at
+## proportion of missingness by study day
+## All TBI patients
+tbi.daily.prop.all <- tbi.daily.status %>%
+  filter(!(daily.status %in% c('Discharged', 'Deceased'))) %>%
+  group_by(study.day) %>%
+  summarise(prop.normal = mean(daily.status == 'Normal'),
+            prop.delirious = mean(daily.status == 'Delirious'),
+            prop.comatose = mean(daily.status == 'Comatose'),
+            prop.unknown = mean(daily.status == 'Unknown')) %>%
+  gather(key = status, value = prop, prop.normal:prop.unknown)
+
+prop.status.all <- ggplot(data = tbi.daily.prop.all,
+                          aes(x = study.day, y = prop, group = status, colour = status)) +
+  geom_line(aes(size = status == 'prop.unknown')) +
+  scale_y_continuous(limits = c(0, 1)) +
+  scale_size_manual(values = c(0.5, 1), guide = 'none') +
+  ggtitle('Mental Status in Hospital by Study Day, All Patients')
+
+## All TBI patients ever in ICU
+tbi.daily.prop.icu <- tbi.daily.status %>%
+  filter(!(daily.status %in% c('Discharged', 'Deceased')) & icu.los > 0) %>%
+  group_by(study.day) %>%
+  summarise(prop.normal = mean(daily.status == 'Normal'),
+            prop.delirious = mean(daily.status == 'Delirious'),
+            prop.comatose = mean(daily.status == 'Comatose'),
+            prop.unknown = mean(daily.status == 'Unknown')) %>%
+  gather(key = status, value = prop, prop.normal:prop.unknown)
+
+prop.status.icu <- ggplot(data = tbi.daily.prop.icu,
+                          aes(x = study.day, y = prop, group = status, colour = status)) +
+  geom_line(aes(size = status == 'prop.unknown')) +
+  scale_y_continuous(limits = c(0, 1)) +
+  scale_size_manual(values = c(0.5, 1), guide = 'none') +
+  ggtitle('Mental Status in Hospital by Study Day, Patients with >=1 ICU Day')
+
+## All TBI patients in ICU, but <10 days
+tbi.daily.prop.icu10 <- tbi.daily.status %>%
+  filter(!(daily.status %in% c('Discharged', 'Deceased')) & icu.los > 0 & icu.los <= 10) %>%
+  group_by(study.day) %>%
+  summarise(prop.normal = mean(daily.status == 'Normal'),
+            prop.delirious = mean(daily.status == 'Delirious'),
+            prop.comatose = mean(daily.status == 'Comatose'),
+            prop.unknown = mean(daily.status == 'Unknown')) %>%
+  gather(key = status, value = prop, prop.normal:prop.unknown)
+
+prop.status.icu10 <- ggplot(data = tbi.daily.prop.icu10,
+                            aes(x = study.day, y = prop, group = status, colour = status)) +
+  geom_line(aes(size = status == 'prop.unknown')) +
+  scale_y_continuous(limits = c(0, 1)) +
+  scale_size_manual(values = c(0.5, 1), guide = 'none') +
+  ggtitle('Mental Status in Hospital by Study Day, Patients with >=1 but <= 10 ICU Days')
+
+@
+
+<<printplotsbystudyday, results = 'asis', fig.width = 7.5, fig.height = 10, fig.align = 'center', fig.pos = '!h'>>=
+multiplot(hist.status.all, hist.status.icu, hist.status.icu10, layout = matrix(1:3, ncol = 1))
+multiplot(prop.status.all, prop.status.icu, prop.status.icu10, layout = matrix(1:3, ncol = 1))
 
 @
 
