@@ -4,6 +4,8 @@
 
 library(Hmisc)
 library(dplyr) ## used for easy summarizing for outcome variables
+library(mice) ## used for imputing missing mental status
+library(data.table) ## used for removing partial duplicate rows in MR data
 
 ## Function to take a variable with "Missing" as an option and recode as NA
 missing.options <- c('Missing', 'Not recorded/Missing', 'Missing/Unknown', 'Unknown/Missing',
@@ -36,6 +38,9 @@ mr.data.miss <- rowSums(!is.na(mr.data[,mr.canthave])) == 0
 ck.mr.infusion <- merge(mr.data[mr.data.miss, c('mrn', 'redcap.event.name')], infusion.data,
                         by = c('mrn', 'redcap.event.name'),
                         all.x = TRUE, all.y = FALSE)
+
+## -- Delete duplicate rows: same except for REDCap event, e.inpatient.day values ------------------
+mr.data <- mr.data[!duplicated(subset(mr.data, select = -c(redcap.event.name, e.inpatient.day))),]
 
 ## -- Merge MR data and drug drip data for calculating drug totals ---------------------------------
 daily.data <- merge(mr.data[!mr.data.miss,], infusion.data,
