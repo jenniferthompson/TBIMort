@@ -28,23 +28,72 @@ names(demog.data) <- gsub('_', '.', names(demog.data), fixed = TRUE)
 names(mr.data) <- gsub('_', '.', names(mr.data), fixed = TRUE)
 names(infusion.data) <- gsub('_', '.', names(infusion.data), fixed = TRUE)
 
-## -- Delete rows with completely missing data - artifact of data management error/fix -------------
-## These columns can have data: patient ID, REDCap event, "complete" variable
-mr.canhave <- c(1, 2, ncol(mr.data))
-mr.canthave <- setdiff(1:ncol(mr.data), mr.canhave)
-mr.data.miss <- rowSums(!is.na(mr.data[,mr.canthave])) == 0
-# mr.data <- mr.data[!mr.data.miss,]
+## -- Delete rows with all-missing data from each form; --------------------------------------------
+## -- due to either data import error or general EMR data weirdness --------------------------------
 
-ck.mr.infusion <- merge(mr.data[mr.data.miss, c('mrn', 'redcap.event.name')], infusion.data,
-                        by = c('mrn', 'redcap.event.name'),
-                        all.x = TRUE, all.y = FALSE)
+## Demographics (TRACS) data
+demog.cols.always.there <- c('mrn', 'redcap.event.name', 'demographics.tracs.data.complete')
+demog.check.cols <- setdiff(1:ncol(demog.data), match(demog.cols.always.there, names(demog.data)))
+demog.cols.present <- rowSums(!is.na(demog.data[,demog.check.cols]))
 
-## -- Delete duplicate rows: same except for REDCap event, e.inpatient.day values ------------------
-mr.data <- mr.data[!duplicated(subset(mr.data, select = -c(redcap.event.name, e.inpatient.day))),]
+demog.data.trimmed <- demog.data[demog.cols.present > 0,]
+
+## MR (Ehrenfeld) data
+##   Weirdly, a lot of these records have nothing but encounter info and right pupil reactivity.
+##   Delete these, per conversations mostly with Mayur, October 2016.
+mr.cols.always.there <- c('mrn', 'redcap.event.name', 'medical.record.ehrenfeld.data.complete')
+mr.cols.mostly.there <- c('e.encounter', 'e.admit.date', 'e.discharge.date', 'e.inpatient.day',
+                          'r.pupil.day')
+
+mr.cols.present.all <-
+  rowSums(!is.na(mr.data[,setdiff(1:ncol(mr.data), match(mr.cols.always.there, names(mr.data)))]))
+
+mr.cols.present.rpupil <-
+  rowSums(!is.na(mr.data[,setdiff(1:ncol(mr.data),
+                                  match(c(mr.cols.always.there, mr.cols.mostly.there),
+                                        names(mr.data)))]))
+
+# ## Detective work for dropped patient-days
+# mr.data.removed <- mr.data[mr.cols.present.rpupil == 0,] %>%
+#   mutate(adm.posix = as.POSIXct(as.character(e.admit.date), format = '%Y-%m-%d %H:%M'),
+#          dc.posix = as.POSIXct(as.character(e.discharge.date), format = '%Y-%m-%d %H:%M'),
+#          encounter.hrs = as.numeric(difftime(dc.posix, adm.posix, units = 'hours')))
+# 
+# ## How long were encounters for patients with encounter data, but removed from final MR data?
+# mr.enc.data <- unique(mr.data.removed[,c('mrn', 'adm.posix', 'dc.posix', 'encounter.hrs')])
+# describe(mr.enc.data$encounter.hrs)
+
+# mr.only.epupil <- mr.data[mr.missing.everything > 0 & mr.missing.mostly.everything == 0,]
+# mr.only.epupil.unique <-
+#   unique(subset(mr.only.epupil, select = -c(redcap.event.name, e.inpatient.day)))
+# mr.have.epupil.recs <- unique(mr.only.epupil.unique$mrn)
+# nrow(subset(mr.data, mrn %in% mr.have.epupil.recs))
+
+mr.data.trimmed <- mr.data[mr.cols.present.rpupil > 0,]
+
+## Infusion data: remove any records that don't match those in mr.data.trimmed. (Can't just remove
+## rows with all missing, because missing could indicate 0 dose.)
+infusion.data.trimmed <- left_join(dplyr::select(mr.data.trimmed, mrn, redcap.event.name),
+                                   infusion.data)
+
+## Data checks: Patients in one data set and not in others
+demog.mrns <- sort(unique(demog.data.trimmed$mrn))
+mr.mrns <- sort(unique(mr.data.trimmed$mrn))
+infusion.mrns <- sort(unique(infusion.data.trimmed$mrn))
+
+## How many MRNs in total between all three forms?
+all.mrns <- sort(unique(c(demog.mrns, mr.mrns, unique(infusion.mrns))))
+
+## Which MRNs have data in all three forms?
+have.all.forms <- intersect(intersect(demog.mrns, mr.mrns), infusion.mrns)
+
+## Which forms are missing which MRNs?
+not.in.demog <- setdiff(all.mrns, demog.mrns)
+not.in.mr <- setdiff(all.mrns, mr.mrns)
+not.in.infusion <- setdiff(all.mrns, infusion.mrns)
 
 ## -- Merge MR data and drug drip data for calculating drug totals ---------------------------------
-daily.data <- merge(mr.data[!mr.data.miss,], infusion.data,
-                    by = c('mrn', 'redcap.event.name'), all = TRUE)
+daily.data <- left_join(mr.data.trimmed, infusion.data.trimmed, by = c('mrn', 'redcap.event.name'))
 
 ## -- Add weight at baseline to daily data for use in SOFA CV, drug calculations -------------------
 base.wt.data <- subset(daily.data,
