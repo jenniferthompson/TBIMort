@@ -100,7 +100,7 @@ base.wt.data <- subset(daily.data,
                        redcap.event.name == 'Inpatient Day 00',
                        select = c(mrn, med.wt.encounter))
 names(base.wt.data) <- c('mrn', 'base.weight')
-daily.data <- merge(daily.data, base.wt.data, by = 'mrn')
+daily.data <- left_join(daily.data, base.wt.data, by = 'mrn')
 
 ## -- Derive necessary variables using daily data --------------------------------------------------
 ## Pupil reactivity
@@ -392,38 +392,50 @@ daily.data$units.platelets <- with(daily.data, ifelse(is.na(tot.platelets), 0, t
 daily.data$units.cryo <- with(daily.data, ifelse(is.na(tot.cryo), 0, tot.cryo / 250))
 
 ## -- Data management for demographic/summary data -------------------------------------------------
-demog.data$pt.admit <- as.Date(demog.data$pt.admit, format = '%Y-%m-%d')
-demog.data$pt.injury.date <- as.Date(demog.data$pt.injury.date, format = '%Y-%m-%d')
-demog.data$hosp.death.date <- as.Date(demog.data$hosp.death.date, format = '%Y-%m-%d')
-demog.data$ssdi.death.date <- as.Date(demog.data$ssdi.death.date, format = '%Y-%m-%d')
-demog.data$final.death.date <- as.Date(demog.data$final.death.date, format = '%m/%d/%Y')
-demog.data$discharge.date <- as.Date(demog.data$discharge.date, format = '%Y-%m-%d')
+date.yyyymmdd <- function(x){ as.Date(as.character(x), format = '%Y-%m-%d') }
+
+demog.data.trimmed <- demog.data.trimmed %>%
+  mutate(pt.admit = date.yyyymmdd(pt.admit),
+         pt.injury.date = date.yyyymmdd(pt.injury.date),
+         hosp.death.date = date.yyyymmdd(hosp.death.date),
+         ssdi.death.date = date.yyyymmdd(ssdi.death.date),
+         final.death.date = date.yyyymmdd(final.death.date),
+         discharge.date = date.yyyymmdd(discharge.date),
+         race2 = f.relevel(race, 'White'),
+         gender = f.relevel(gender, 'Male'),
+         insurance.code = f.relevel(insurance.code, 'Private'),
+         cpr.yn = f.relevel(cpr.yn, 'Not Performed Pre-Hospital, Ref Hospital, or ED'),
+         pt.marshall = f.relevel(pt.marshall, 'Marshall Class I'),
+         pt.cerebral.na = f.relevel(rm.miss(pt.cerebral), 'No'),
+         pt.epidural.na = f.relevel(rm.miss(pt.epidural), 'No'),
+         pt.injury.na = f.relevel(rm.miss(pt.injury), 'Blunt'),
+         disposition.coded = f.relevel(disposition.coded, 'Discharged home'),
+         hosp.death = f.relevel(hosp.death, 'No'),
+         final.death = f.relevel(final.death, 'No'))
 
 ## -- Calculate outcome variables ------------------------------------------------------------------
-## Time to in-hospital death: admission to time of in-hospital death
-demog.data$time.death.inhosp <- with(demog.data, {
-  ifelse(is.na(pt.admit) | is.na(hosp.death.date), NA,
-         as.numeric(difftime(hosp.death.date, pt.admit, units = 'days')) + 1) })
-
-## Time to in-hospital death or discharge: admission to time of in-hospital death, or
-##  censored at discharge
-demog.data$time.death.dc <- with(demog.data, {
-  ifelse(!is.na(time.death.inhosp), time.death.inhosp,
-         as.numeric(difftime(discharge.date, pt.admit, units = 'days')) + 1) })
-
-## Time to overall death: admission to max(SSDI death, hospital death)
-demog.data$time.death.ever <- with(demog.data, {
-  ifelse(is.na(pt.admit) | (is.na(hosp.death.date) & is.na(ssdi.death.date)), NA,
-  ifelse(is.na(hosp.death.date) | ssdi.death.date > hosp.death.date,
-         as.numeric(difftime(ssdi.death.date, pt.admit, units = 'days')) + 1,
-         as.numeric(difftime(hosp.death.date, pt.admit, units = 'days')) + 1)) })
-
-## Time to 3-year death: time to overall death, or censored at 1095 days
-demog.data$time.death.3yr <- with(demog.data, {
-  ifelse(is.na(time.death.ever) | time.death.ever > 1095, 1095, time.death.ever) })
-demog.data$died.3yr <- with(demog.data, {
-  factor(ifelse(!is.na(time.death.ever) & time.death.ever <= 1095, 1, 0),
-         levels = 0:1, labels = c('No', 'Yes')) })
+demog.data.trimmed <- demog.data.trimmed %>%
+  mutate(## Time to in-hospital death: admission to time of in-hospital death
+         time.death.inhosp = ifelse(is.na(pt.admit) | is.na(hosp.death.date), NA,
+                                    as.numeric(difftime(hosp.death.date, pt.admit,
+                                                        units = 'days')) + 1),
+         ## Time to in-hospital death or discharge: admission to time of in-hospital death, or
+         ##  censored at discharge
+         time.death.dc = ifelse(!is.na(time.death.inhosp), time.death.inhosp,
+                                as.numeric(difftime(discharge.date, pt.admit, units = 'days')) + 1),
+         ## Time to overall death: admission to max(SSDI death, hospital death)
+         time.death.ever = ifelse(is.na(pt.admit) |
+                                    (is.na(hosp.death.date) & is.na(ssdi.death.date)), NA,
+                           ifelse(is.na(hosp.death.date) | ssdi.death.date > hosp.death.date,
+                                  as.numeric(difftime(ssdi.death.date, pt.admit,
+                                                      units = 'days')) + 1,
+                                  as.numeric(difftime(hosp.death.date, pt.admit,
+                                                      units = 'days')) + 1)),
+         ## Time to 3-year death: time to overall death, or censored at 1095 days
+         time.death.3yr = ifelse(is.na(time.death.ever) | time.death.ever > 1095, 1095,
+                                 time.death.ever),
+         died.3yr = factor(ifelse(!is.na(time.death.ever) & time.death.ever <= 1095, 1, 0),
+                           levels = 0:1, labels = c('No', 'Yes')))
 
 ## Delirium, coma duration
 mental.vars <- daily.data %>%
@@ -447,19 +459,6 @@ dcfd.data <- daily.data %>%
                              14 - sum(mental.status %in% c('Delirious', 'Comatose'),
                                       na.rm = TRUE)))
 
-## -- Demographic data management ------------------------------------------------------------------
-demog.data$race2 <- f.relevel(demog.data$race, 'White')
-demog.data$gender <- f.relevel(demog.data$gender, 'Male')
-demog.data$insurance.code <- f.relevel(demog.data$insurance.code, 'Private')
-demog.data$cpr.yn <- f.relevel(demog.data$cpr.yn, 'Not Performed Pre-Hospital, Ref Hospital, or ED')
-demog.data$pt.marshall <- f.relevel(demog.data$pt.marshall, 'Marshall Class I')
-demog.data$pt.cerebral.na <- f.relevel(rm.miss(demog.data$pt.cerebral), 'No')
-demog.data$pt.epidural.na <- f.relevel(rm.miss(demog.data$pt.epidural), 'No')
-demog.data$pt.injury.na <- f.relevel(rm.miss(demog.data$pt.injury), 'Blunt')
-demog.data$disposition.coded <- f.relevel(demog.data$disposition.coded, 'Discharged home')
-demog.data$hosp.death <- f.relevel(demog.data$hosp.death, 'No')
-demog.data$final.death <- f.relevel(demog.data$final.death, 'No')
-
 ## -- Get baseline MR variables from day 00 --------------------------------------------------------
 day00.data <- subset(daily.data,
                      redcap.event.name == 'Inpatient Day 00',
@@ -472,7 +471,7 @@ names(day00.data) <- c('mrn', 'base.weight', 'base.motor', 'base.motor.imp', 'ba
 
 ## -- Create analysis data sets --------------------------------------------------------------------
 ## Use age filter to remove patients with only pupil reactivity data; some sort of weirdness there
-tbi.oneobs <- subset(demog.data,
+tbi.oneobs <- subset(demog.data.trimmed,
                      select = c(mrn, age, gender, race, insurance.code, iss, cpr.yn, pt.marshall,
                                 pt.cerebral, pt.cerebral.na, pt.epidural, pt.epidural.na, pt.injury,
                                 pt.injury.na, vent.days, disposition.coded, fim.total, icu.los, los,
@@ -525,30 +524,46 @@ label(tbi.oneobs$days.del) <- 'Days of delirium'
 label(tbi.oneobs$days.coma) <- 'Days of coma'
 label(tbi.oneobs$dcfd.14) <- 'DCFDs within 14 days of admission'
 
-tbi.daily <- subset(daily.data,
-                    mrn %in% tbi.oneobs$mrn,
-                    select = c(mrn, redcap.event.name, study.day, mental.status, max.motor,
-                               max.motor.imp, pupil.react, pupil.react.imp, min.glucose,
-                               min.glucose.imp, min.hemoglobin, min.hemoglobin.imp, min.sodium,
-                               min.sodium.imp, max.icp, max.icp.imp, max.icp.dich,
-                               sofa.resp, sofa.resp.imp, sofa.cns, sofa.cns.imp, sofa.cv,
-                               sofa.cv.imp, sofa.liver, sofa.liver.imp, sofa.coag, sofa.coag.imp,
-                               sofa.renal, sofa.renal.imp, sofa.nanormal, sofa.nanormal.imp,
-                               sofa.namissing, sofa.namissing.imp, sofa.mod.nanormal,
-                               sofa.mod.nanormal.imp, sofa.mod.namissing, sofa.mod.namissing.imp,
-                               tot.benzo, tot.benzo.cube, tot.opioid, tot.opioid.cube, tot.propofol,
-                               tot.propofol.cube, tot.dex, tot.dex.cube, tot.antipsyc,
-                               tot.antipsyc.cube, tot.betablock, tot.betablock.cube, tot.pento,
-                               tot.pento.cube, tot.clonid, tot.clonid.cube, units.cryo, units.plasma,
-                               units.platelets, units.prbc))
+tbi.daily.org <- subset(daily.data,
+                        mrn %in% tbi.oneobs$mrn,
+                        select = c(mrn, redcap.event.name, study.day, mental.status, max.motor,
+                                   max.motor.imp, pupil.react, pupil.react.imp, min.glucose,
+                                   min.glucose.imp, min.hemoglobin, min.hemoglobin.imp, min.sodium,
+                                   min.sodium.imp, max.icp, max.icp.imp, max.icp.dich,
+                                   sofa.resp, sofa.resp.imp, sofa.cns, sofa.cns.imp, sofa.cv,
+                                   sofa.cv.imp, sofa.liver, sofa.liver.imp, sofa.coag,
+                                   sofa.coag.imp, sofa.renal, sofa.renal.imp, sofa.nanormal,
+                                   sofa.nanormal.imp, sofa.namissing, sofa.namissing.imp,
+                                   sofa.mod.nanormal, sofa.mod.nanormal.imp, sofa.mod.namissing,
+                                   sofa.mod.namissing.imp, tot.benzo, tot.benzo.cube, tot.opioid,
+                                   tot.opioid.cube, tot.propofol, tot.propofol.cube, tot.dex,
+                                   tot.dex.cube, tot.antipsyc, tot.antipsyc.cube, tot.betablock,
+                                   tot.betablock.cube, tot.pento, tot.pento.cube, tot.clonid,
+                                   tot.clonid.cube, units.cryo, units.plasma, units.platelets,
+                                   units.prbc))
 
-names(tbi.daily) <- gsub('^redcap\\.event\\.name$', 'event', names(tbi.daily))
+names(tbi.daily.org) <- gsub('^redcap\\.event\\.name$', 'event', names(tbi.daily.org))
 
 ## Remove records from tbi.daily which are after in-hospital death or discharge date
-tbi.daily <- tbi.daily %>%
+## (If patient is missing death and discharge info, keep all daily records)
+tbi.daily <- tbi.daily.org %>%
   left_join(dplyr::select(tbi.oneobs, mrn, time.death.dc), by = 'mrn') %>%
-  filter(study.day <= time.death.dc) %>%
+  filter(is.na(time.death.dc) | study.day <= (time.death.dc + 1)) %>%
   dplyr::select(-time.death.dc)
+
+# tbi.daily.rm <- tbi.daily.org %>%
+#   left_join(dplyr::select(tbi.oneobs, mrn, time.death.dc), by = 'mrn') %>%
+#   filter(!is.na(time.death.dc) & study.day > (time.death.dc + 1)) %>%
+#   dplyr::select(-time.death.dc)
+# 
+# n.recs.daily.org <- unlist(lapply(all.mrns,
+#                                   FUN = function(id){ nrow(subset(tbi.daily.org, mrn == id)) }))
+# n.recs.daily.new <- unlist(lapply(all.mrns,
+#                                   FUN = function(id){ nrow(subset(tbi.daily, mrn == id)) }))
+# 
+# n.recs.daily <- as.data.frame(cbind(all.mrns, n.recs.daily.org, n.recs.daily.new))
+# n.recs.daily$recs.removed <- with(n.recs.daily, n.recs.daily.org - n.recs.daily.new)
+# pts.dailyrecs.removed <- subset(n.recs.daily, n.recs.daily.org != n.recs.daily.new)
 
 label(tbi.daily$mrn) <- 'Medical record number'
 label(tbi.daily$event) <- 'Study event'
