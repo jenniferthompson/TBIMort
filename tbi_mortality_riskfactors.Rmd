@@ -1,32 +1,35 @@
 ---
 title: Baseline and In-Hospital Risk Factors for Mortality and Other Outcomes among
   TBI Patients
-author:
-- name: 'Statistician: Jennifer Thompson, MPH'
-- name: 'Supervisor: Rameela Chandrasekhar, PhD'
-date: "`r format(Sys.time(), '%B %d %Y')`"
+author: 'Jennifer Thompson, MPH; Supervisor: Rameela Chandrasekhar, PhD'
+date: '`r format(Sys.time(), "%B %d %Y")`'
 output:
-  pdf_document:
-    toc: yes
-  html_notebook:
-    toc: yes
-    toc_float: yes
   html_document:
     toc: yes
     toc_float: yes
+    toc_depth: 2
+  html_notebook:
+    toc: yes
+    toc_float: yes
+    toc_depth: 2
+  pdf_document:
+    toc: yes
+    toc_depth: 2
 abstract: The following analyses examine baseline and in-hospital risk factors for
   in-hospital mortality, in-hospital and discharge characteristics, and long-term
   mortality among a cohort of traumatic brain injury (TBI) patients with at least
   one day in the ICU.
 ---
 
-```{r setup, echo = FALSE, message = FALSE}
-knitr::opts_chunk$set(echo = FALSE, warning = FALSE, message = FALSE)
+```{r knitrsetup, echo = FALSE, message = FALSE}
+knitr::opts_chunk$set(echo = TRUE, warning = FALSE, message = FALSE)
+```
 
+```{r setup}
 ## Make indentation for Markdown tables easier
-space.3 <- "&nbsp;&nbsp;&nbsp;"
-space.6 <- "&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;"
-space.9 <- "&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;"
+space.3 <- paste(rep("&nbsp;", 3), collapse = '')
+space.6 <- paste(rep("&nbsp;", 6), collapse = '')
+space.9 <- paste(rep("&nbsp;", 9), collapse = '')
 
 ## Load libraries and original analysis data sets
 library(tidyverse)
@@ -84,7 +87,7 @@ n.survivors <- with(tbi.oneobs.icu, sum(!is.na(hosp.death) & hosp.death == 'No')
 
 ## Create CONSORT table
 consort.table <- data.frame(Patients = c('All TBI Patients',
-                                         paste0(space.3, 'ICU LOS data'),
+                                         paste0(space.3, 'Missing ICU LOS data'),
                                          paste0(space.3, '0 days in ICU'),
                                          paste0(space.3, '>=1 day in ICU'),
                                          paste0(space.6, 'Missing daily EMR data'),
