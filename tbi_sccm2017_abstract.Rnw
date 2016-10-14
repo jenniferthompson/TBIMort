@@ -362,7 +362,10 @@ colnames(results.table) <- paste(colnames(results.table),
                                  sep = '.')
 colnames(results.table) <- gsub('\\.vec', '', colnames(results.table))
 
-## -- Create four-facet figure showing association between beta-blockers and hazard of death -------
+## -- Create four-facet figures showing association between drugs and hazard of death --------------
+mortality.levels <- c('In-Hospital Mortality', '3-Year Mortality')
+icp.levels <- c('ICP, original scale', 'ICP, normal vs abnormal')
+
 betablock.predict <- do.call(rbind,
                              lapply(1:length(mod.list),
                                     FUN = function(m){
@@ -372,23 +375,170 @@ betablock.predict <- do.call(rbind,
                                       tmp <- tmp[,c('tot.betablock.cube', 'yhat', 'lower', 'upper')]
                                       time.icp <- strsplit(names(mod.list)[m], '\\.')[[1]]
                                       tmp$time <- time.icp[2]
+                                      tmp$time.f <- with(tmp, factor(ifelse(time == 'inhosp', 1, 2),
+                                                                     levels = 1:2,
+                                                                     labels = mortality.levels))
                                       tmp$icp <- time.icp[3]
+                                      tmp$icp.f <- with(tmp, factor(ifelse(icp == 'icpc', 1, 2),
+                                                                    levels = 1:2,
+                                                                    labels = icp.levels))
                                       tmp
                                     }))
-betablock.predict$time.f <- with(betablock.predict, factor(ifelse(time == 'inhosp', 1, 2),
-                                                           levels = 1:2,
-                                                           labels = c('In-Hospital Mortality',
-                                                                      '3-Year Mortality')))
-betablock.predict$icp.f <- with(betablock.predict, factor(ifelse(icp == 'icpc', 1, 2),
-                                                          levels = 1:2,
-                                                          labels = c('ICP, original scale',
-                                                                     'ICP, normal vs abnormal')))
-
 betablock.plot <- ggplot(data = betablock.predict, aes(x = tot.betablock.cube, y = yhat)) +
   geom_ribbon(aes(ymin = lower, ymax = upper), fill = 'navy', alpha = 0.4) +
   geom_line(colour = 'navy') +
   facet_wrap(icp.f ~ time.f, scales = 'free') +
   xlab('24h Beta-Blockers, Cube Root') +
+  ylab('Hazard of Death')
+
+opioid.predict <- do.call(rbind,
+                          lapply(1:length(mod.list),
+                                 FUN = function(m){
+                                   tmp <- as.data.frame(Predict(mod.list[[m]],
+                                                                tot.opioid.cube = NA,
+                                                                fun = exp))
+                                   tmp <- tmp[,c('tot.opioid.cube', 'yhat', 'lower', 'upper')]
+                                   time.icp <- strsplit(names(mod.list)[m], '\\.')[[1]]
+                                   tmp$time <- time.icp[2]
+                                   tmp$time.f <- with(tmp, factor(ifelse(time == 'inhosp', 1, 2),
+                                                                  levels = 1:2,
+                                                                  labels = mortality.levels))
+                                   tmp$icp <- time.icp[3]
+                                   tmp$icp.f <- with(tmp, factor(ifelse(icp == 'icpc', 1, 2),
+                                                                 levels = 1:2,
+                                                                 labels = icp.levels))
+                                   tmp
+                                 }))
+opioid.plot <- ggplot(data = opioid.predict, aes(x = tot.opioid.cube, y = yhat)) +
+  geom_ribbon(aes(ymin = lower, ymax = upper), fill = 'navy', alpha = 0.4) +
+  geom_line(colour = 'navy') +
+  facet_wrap(icp.f ~ time.f, scales = 'free') +
+  xlab('24h Opioids, Cube Root') +
+  ylab('Hazard of Death')
+
+benzo.predict <- do.call(rbind,
+                         lapply(1:length(mod.list),
+                                FUN = function(m){
+                                  tmp <- as.data.frame(Predict(mod.list[[m]],
+                                                               tot.benzo.cube = NA,
+                                                               fun = exp))
+                                  tmp <- tmp[,c('tot.benzo.cube', 'yhat', 'lower', 'upper')]
+                                  time.icp <- strsplit(names(mod.list)[m], '\\.')[[1]]
+                                  tmp$time <- time.icp[2]
+                                  tmp$time.f <- with(tmp, factor(ifelse(time == 'inhosp', 1, 2),
+                                                                 levels = 1:2,
+                                                                 labels = mortality.levels))
+                                  tmp$icp <- time.icp[3]
+                                  tmp$icp.f <- with(tmp, factor(ifelse(icp == 'icpc', 1, 2),
+                                                                levels = 1:2,
+                                                                labels = icp.levels))
+                                  tmp
+                                }))
+benzo.plot <- ggplot(data = benzo.predict, aes(x = tot.benzo.cube, y = yhat)) +
+  geom_ribbon(aes(ymin = lower, ymax = upper), fill = 'navy', alpha = 0.4) +
+  geom_line(colour = 'navy') +
+  facet_wrap(icp.f ~ time.f, scales = 'free') +
+  xlab('24h Benzos, Cube Root') +
+  ylab('Hazard of Death')
+
+antipsyc.predict <- do.call(rbind,
+                            lapply(1:length(mod.list),
+                                   FUN = function(m){
+                                     tmp <- as.data.frame(Predict(mod.list[[m]],
+                                                                  tot.antipsyc.cube = NA,
+                                                                  fun = exp))
+                                     tmp <- tmp[,c('tot.antipsyc.cube', 'yhat', 'lower', 'upper')]
+                                     time.icp <- strsplit(names(mod.list)[m], '\\.')[[1]]
+                                     tmp$time <- time.icp[2]
+                                     tmp$time.f <- with(tmp, factor(ifelse(time == 'inhosp', 1, 2),
+                                                                    levels = 1:2,
+                                                                    labels = mortality.levels))
+                                     tmp$icp <- time.icp[3]
+                                     tmp$icp.f <- with(tmp, factor(ifelse(icp == 'icpc', 1, 2),
+                                                                   levels = 1:2,
+                                                                   labels = icp.levels))
+                                     tmp
+                                   }))
+antipsyc.plot <- ggplot(data = antipsyc.predict, aes(x = tot.antipsyc.cube, y = yhat)) +
+  geom_ribbon(aes(ymin = lower, ymax = upper), fill = 'navy', alpha = 0.4) +
+  geom_line(colour = 'navy') +
+  facet_wrap(icp.f ~ time.f, scales = 'free') +
+  xlab('24h Antipsychotics, Cube Root') +
+  ylab('Hazard of Death')
+
+propofol.predict <- do.call(rbind,
+                            lapply(1:length(mod.list),
+                                   FUN = function(m){
+                                     tmp <- as.data.frame(Predict(mod.list[[m]],
+                                                                  tot.propofol.cube = NA,
+                                                                  fun = exp))
+                                     tmp <- tmp[,c('tot.propofol.cube', 'yhat', 'lower', 'upper')]
+                                     time.icp <- strsplit(names(mod.list)[m], '\\.')[[1]]
+                                     tmp$time <- time.icp[2]
+                                     tmp$time.f <- with(tmp, factor(ifelse(time == 'inhosp', 1, 2),
+                                                                    levels = 1:2,
+                                                                    labels = mortality.levels))
+                                     tmp$icp <- time.icp[3]
+                                     tmp$icp.f <- with(tmp, factor(ifelse(icp == 'icpc', 1, 2),
+                                                                   levels = 1:2,
+                                                                   labels = icp.levels))
+                                     tmp
+                                   }))
+propofol.plot <- ggplot(data = propofol.predict, aes(x = tot.propofol.cube, y = yhat)) +
+  geom_ribbon(aes(ymin = lower, ymax = upper), fill = 'navy', alpha = 0.4) +
+  geom_line(colour = 'navy') +
+  facet_wrap(icp.f ~ time.f, scales = 'free') +
+  xlab('24h Propofol, Cube Root') +
+  ylab('Hazard of Death')
+
+dex.predict <- do.call(rbind,
+                       lapply(1:length(mod.list),
+                              FUN = function(m){
+                                tmp <- as.data.frame(Predict(mod.list[[m]],
+                                                             tot.dex.cube = NA,
+                                                             fun = exp))
+                                tmp <- tmp[,c('tot.dex.cube', 'yhat', 'lower', 'upper')]
+                                time.icp <- strsplit(names(mod.list)[m], '\\.')[[1]]
+                                tmp$time <- time.icp[2]
+                                tmp$time.f <- with(tmp, factor(ifelse(time == 'inhosp', 1, 2),
+                                                               levels = 1:2,
+                                                               labels = mortality.levels))
+                                tmp$icp <- time.icp[3]
+                                tmp$icp.f <- with(tmp, factor(ifelse(icp == 'icpc', 1, 2),
+                                                              levels = 1:2,
+                                                              labels = icp.levels))
+                                tmp
+                              }))
+dex.plot <- ggplot(data = dex.predict, aes(x = tot.dex.cube, y = yhat)) +
+  geom_ribbon(aes(ymin = lower, ymax = upper), fill = 'navy', alpha = 0.4) +
+  geom_line(colour = 'navy') +
+  facet_wrap(icp.f ~ time.f, scales = 'free') +
+  xlab('24h Dexmedetomidine, Cube Root') +
+  ylab('Hazard of Death')
+
+clonid.predict <- do.call(rbind,
+                          lapply(1:length(mod.list),
+                                 FUN = function(m){
+                                   tmp <- as.data.frame(Predict(mod.list[[m]],
+                                                                tot.clonid.cube = NA,
+                                                                fun = exp))
+                                   tmp <- tmp[,c('tot.clonid.cube', 'yhat', 'lower', 'upper')]
+                                   time.icp <- strsplit(names(mod.list)[m], '\\.')[[1]]
+                                   tmp$time <- time.icp[2]
+                                   tmp$time.f <- with(tmp, factor(ifelse(time == 'inhosp', 1, 2),
+                                                                  levels = 1:2,
+                                                                  labels = mortality.levels))
+                                   tmp$icp <- time.icp[3]
+                                   tmp$icp.f <- with(tmp, factor(ifelse(icp == 'icpc', 1, 2),
+                                                                 levels = 1:2,
+                                                                 labels = icp.levels))
+                                   tmp
+                                 }))
+clonid.plot <- ggplot(data = clonid.predict, aes(x = tot.clonid.cube, y = yhat)) +
+  geom_ribbon(aes(ymin = lower, ymax = upper), fill = 'navy', alpha = 0.4) +
+  geom_line(colour = 'navy') +
+  facet_wrap(icp.f ~ time.f, scales = 'free') +
+  xlab('24h Clonidine, Cube Root') +
   ylab('Hazard of Death')
 
 @
@@ -585,8 +735,38 @@ latex(results.table[,5:8], file = '',
 
 @
 
-<<betablockplot, results = 'asis', fig.cap = '24-Hour Beta-Blocker Dose vs Mortality', fig.align = 'center', fig.pos = '!h'>>=
+<<betablockplot, results = 'asis', fig.cap = '24-Hour Beta-Blocker Dose vs Mortality', fig.align = 'center', fig.pos = '!h', fig.height=4.5, fig.width = 7>>=
 betablock.plot
+
+@
+
+<<opioidkplot, results = 'asis', fig.cap = '24-Hour Opioid Dose vs Mortality', fig.align = 'center', fig.pos = '!h', fig.height=4.5, fig.width = 7>>=
+opioid.plot
+
+@
+
+<<benzoplot, results = 'asis', fig.cap = '24-Hour Benzodiazepine Dose vs Mortality', fig.align = 'center', fig.pos = '!h', fig.height=4.5, fig.width = 7>>=
+benzo.plot
+
+@
+
+<<antipsycplot, results = 'asis', fig.cap = '24-Hour Antipsychotic Dose vs Mortality', fig.align = 'center', fig.pos = '!h', fig.height=4.5, fig.width = 7>>=
+antipsyc.plot
+
+@
+
+<<propofolplot, results = 'asis', fig.cap = '24-Hour Propofol Dose vs Mortality', fig.align = 'center', fig.pos = '!h', fig.height=4.5, fig.width = 7>>=
+propofol.plot
+
+@
+
+<<dexplot, results = 'asis', fig.cap = '24-Hour Dexmedetomidine Dose vs Mortality', fig.align = 'center', fig.pos = '!h', fig.height=4.5, fig.width = 7>>=
+dex.plot
+
+@
+
+<<clonidplot, results = 'asis', fig.cap = '24-Hour Clonidine Dose vs Mortality', fig.align = 'center', fig.pos = '!h', fig.height=4.5, fig.width = 7>>=
+clonid.plot
 
 @
 
