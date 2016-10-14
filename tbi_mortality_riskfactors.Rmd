@@ -1,0 +1,102 @@
+---
+title: Baseline and In-Hospital Risk Factors for Mortality and Other Outcomes among
+  TBI Patients
+author:
+- name: 'Statistician: Jennifer Thompson, MPH'
+- name: 'Supervisor: Rameela Chandrasekhar, PhD'
+date: "`r format(Sys.time(), '%B %d %Y')`"
+output:
+  pdf_document:
+    toc: yes
+  html_notebook:
+    toc: yes
+    toc_float: yes
+  html_document:
+    toc: yes
+    toc_float: yes
+abstract: The following analyses examine baseline and in-hospital risk factors for
+  in-hospital mortality, in-hospital and discharge characteristics, and long-term
+  mortality among a cohort of traumatic brain injury (TBI) patients with at least
+  one day in the ICU.
+---
+
+```{r setup, echo = FALSE, message = FALSE}
+knitr::opts_chunk$set(echo = FALSE, warning = FALSE, message = FALSE)
+
+## Make indentation for Markdown tables easier
+space.3 <- "&nbsp;&nbsp;&nbsp;"
+space.6 <- "&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;"
+space.9 <- "&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;"
+
+## Load libraries and original analysis data sets
+library(tidyverse)
+library(pander)
+library(rms)
+
+load('AnalysisData/tbi_datasets.Rdata')
+
+## -- Create analysis data sets including only ICU patients ----------------------------------------
+## Patients with an ICU LOS of at least 1 day
+icu.pts <- unique(filter(tbi.oneobs, !is.na(icu.los) & icu.los > 0)$mrn)
+
+## Filter daily data
+tbi.daily.icu <- filter(tbi.daily, mrn %in% icu.pts)
+
+## How many patients who would otherwise be included had no daily EMR data?
+icu.nodaily.pts <- setdiff(icu.pts, unique(tbi.daily.icu$mrn))
+
+## MRNs of all patients included in final analyses (>=1 ICU day, demographic + daily data)
+pts.inc <- intersect(icu.pts, unique(tbi.daily.icu$mrn))
+
+## Subset tbi.oneobs to only include pts.inc
+tbi.oneobs.icu <- filter(tbi.oneobs, mrn %in% pts.inc)
+
+```
+
+# Cohort Description
+We originally collected electronic medical record data for `r length(unique(tbi.oneobs$mrn))`
+patients aged 16 years or older admitted to VUMC between August 2006 and July 2012 with traumatic
+brain injury (TBI) requiring hospitalization. TBI was classified based on ICD-9 diagnostic codes,
+and includes concussion without intracranial hemorrhage. Code used to create analysis data sets from
+raw EMR data can be found
+[here](https://github.com/jenniferthompson/TBIMort/blob/master/tbimortality_datamgmt.R).
+
+For these analyses, we focused on patients admitted to the ICU. The table below describes how
+patients were included and excluded from analyses.
+
+```{r createconsorttable}
+## -- Calculate Ns for each group of patients included/excluded ------------------------------------
+## Original number of TBI patients
+n.alltbi <- length(unique(tbi.oneobs$mrn))
+
+## Had ICU LOS >= 1 day?
+n.nolos <- sum(is.na(tbi.oneobs$icu.los))
+n.noicu <- with(tbi.oneobs, sum(!is.na(icu.los) & icu.los == 0))
+n.icu <- length(icu.pts)
+
+## No daily data vs included in main analyses (meaning, at least one day of daily data)
+n.nodaily <- length(icu.nodaily.pts)
+n.included.main <- length(pts.inc)
+
+## Died vs survived hospital stay; survivors will be included in FIM model
+n.diedinhosp <- with(tbi.oneobs.icu, sum(!is.na(hosp.death) & hosp.death == 'Yes'))
+n.survivors <- with(tbi.oneobs.icu, sum(!is.na(hosp.death) & hosp.death == 'No'))
+
+## Create CONSORT table
+consort.table <- data.frame(Patients = c('All TBI Patients',
+                                         paste0(space.3, 'ICU LOS data'),
+                                         paste0(space.3, '0 days in ICU'),
+                                         paste0(space.3, '>=1 day in ICU'),
+                                         paste0(space.6, 'Missing daily EMR data'),
+                                         paste0('**', space.6, 'Included in main analyses**'),
+                                         paste0(space.9, 'Died in hospital'),
+                                         paste0(space.9, 'Survived hospital stay (FIM model)')),
+                            N = c(n.alltbi, n.nolos, n.noicu, n.icu, n.nodaily,
+                                  paste0('**', n.included.main, '**'), n.diedinhosp, n.survivors))
+
+```
+
+```{r printconsorttable, results = 'asis'}
+pander(consort.table, justify = c('left', 'right'))
+
+```
