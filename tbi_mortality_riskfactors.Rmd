@@ -4,14 +4,15 @@ title: Baseline and In-Hospital Risk Factors for Mortality and Other Outcomes am
 author: 'Jennifer Thompson, MPH; Supervisor: Rameela Chandrasekhar, PhD'
 date: '`r format(Sys.time(), "%B %d %Y")`'
 output:
+  html_notebook:
+    code_folding: hide
+    toc: yes
+    toc_depth: 4
+    toc_float: yes
   html_document:
     toc: yes
-    toc_float: yes
     toc_depth: 2
-  html_notebook:
-    toc: yes
     toc_float: yes
-    toc_depth: 2
   pdf_document:
     toc: yes
     toc_depth: 2
@@ -25,17 +26,25 @@ abstract: The following analyses examine baseline and in-hospital risk factors f
 knitr::opts_chunk$set(echo = TRUE, warning = FALSE, message = FALSE)
 ```
 
-```{r setup}
+```{r setup, message = FALSE, results='hide'}
 ## Make indentation for Markdown tables easier
 space.3 <- paste(rep("&nbsp;", 3), collapse = '')
 space.6 <- paste(rep("&nbsp;", 6), collapse = '')
 space.9 <- paste(rep("&nbsp;", 9), collapse = '')
 
 ## Load libraries and original analysis data sets
+library(captioner)
 library(tidyverse)
 library(pander)
 library(rms)
 
+## Set up figure, table numbering
+table_nums <- captioner(prefix = 'Table')
+table_nums(name = 'consort', caption = 'Cohort Inclusion and Exclusion')
+table_nums(name = 'descstats_oneobs', caption = 'Baseline, In-Hospital, & Discharge Characteristics')
+table_nums(name = 'descstats_daily', caption = 'Daily In-Hospital Characteristics')
+
+## Load analysis data sets
 load('AnalysisData/tbi_datasets.Rdata')
 
 ## -- Create analysis data sets including only ICU patients ----------------------------------------
@@ -64,8 +73,9 @@ and includes concussion without intracranial hemorrhage. Code used to create ana
 raw EMR data can be found
 [here](https://github.com/jenniferthompson/TBIMort/blob/master/tbimortality_datamgmt.R).
 
-For these analyses, we focused on patients admitted to the ICU. The table below describes how
-patients were included and excluded from analyses.
+For these analyses, we focused on patients admitted to the ICU.
+`r table_nums('consort', display = 'cite')` describes how patients were included and excluded from
+analyses.
 
 ```{r createconsorttable}
 ## -- Calculate Ns for each group of patients included/excluded ------------------------------------
@@ -99,7 +109,26 @@ consort.table <- data.frame(Patients = c('All TBI Patients',
 
 ```
 
+#### `r table_nums('consort')`
 ```{r printconsorttable, results = 'asis'}
 pander(consort.table, justify = c('left', 'right'))
+
+```
+#### `r table_nums('descstats_oneobs')`
+```{r printdescstatsoneobs, results = 'markup'}
+summaryM(age + gender + race + insurance.code + iss + cpr.yn + pt.marshall + pt.cerebral +
+           pt.epidural + pt.injury + vent.days + days.mental + days.del + days.coma + dcfd.14 +
+           icu.los + los + hosp.death + disposition.coded + fim.total + died.3yr ~ 1,
+         data = tbi.oneobs.icu)
+
+```
+
+#### `r table_nums('descstats_daily')`
+```{r printdescstatsdaily, results = 'markup'}
+summaryM(mental.status + max.motor.imp + pupil.react.imp + min.glucose.imp + min.hemoglobin.imp +
+           min.sodium.imp + max.icp.imp + max.icp.dich + sofa.nanormal.imp + tot.benzo +
+           tot.opioid + tot.propofol + tot.dex + tot.antipsyc + tot.betablock + tot.pento +
+           tot.clonid + units.cryo + units.plasma + units.platelets + units.prbc ~ 1,
+         data = tbi.daily.icu)
 
 ```
