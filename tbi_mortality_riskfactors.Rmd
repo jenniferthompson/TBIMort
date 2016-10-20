@@ -47,9 +47,12 @@ table_nums(name = 'consort', caption = 'Cohort Inclusion and Exclusion')
 table_nums(name = 'descstats_oneobs',
            caption = 'Baseline, In-Hospital, & Discharge Characteristics')
 table_nums(name = 'descstats_daily', caption = 'Daily In-Hospital Characteristics')
-table_nums(name = 'package_info', caption = 'R Packages Loaded')
+table_nums(name = 'clinical_imputation',
+           caption = 'Missingness among Daily Variables Imputed by Rule')
 table_nums(name = 'mortality_patients', caption = 'Inclusion in Mortality Models')
 table_nums(name = 'mortality_missing', caption = 'Missing Data by Patient-Day for Mortality Models')
+
+table_nums(name = 'package_info', caption = 'R Packages Loaded')
 
 ## Load analysis data sets
 load('AnalysisData/tbi_datasets.Rdata')
@@ -145,10 +148,78 @@ summaryM(mental.status + max.motor.imp + pupil.react.imp + min.glucose.imp + min
 
 ```
 
+# Clinical Imputation Rules for Missing Data
+As this is medical record data, there is a large amount of missingness: labs are not ordered unless
+there is reason to order them, for example. We developed a set of clinical imputation rules to deal
+with much of this missingness among our covariates.
 
+Several daily variables were imputed by using the closest value within two days before or after the
+missing value. If two values equidistant from the missing day were available, preference was given
+to the earlier value. `r table_nums("clinical_imputation", display = 'cite')` shows the number of records originally missing for each of these variables; the number successfully imputed using this two-day rule; and the number which remain missing after the two-day rule was implemented.
 
+```{r clinicalimp}
+## -- For each covariate imputed via two-day rule, get N missing in original data, -----------------
+## -- N successfully imputed, and N still missing after imputation ---------------------------------
+clinical.imp.covars <- c('max.motor', 'pupil.react', 'min.glucose', 'min.hemoglobin', 'min.sodium',
+                         'sofa.resp', 'sofa.cns', 'sofa.cv', 'sofa.coag', 'sofa.renal')
 
+clinical.imp.npct.missing <- do.call(rbind,
+                                     lapply(clinical.imp.covars, FUN = function(vname){
+  vname.imp <- paste0(vname, '.imp')
+  
+  ## N, % missing in original data
+  nmiss.org <- sum(is.na(tbi.daily.icu[,vname]))
+  pctmiss.org <- round((nmiss.org / nrow(tbi.daily.icu))*100)
+  
+  ## N, % of missing imputed
+  nimp <- sum(is.na(tbi.daily.icu[,vname]) & !is.na(tbi.daily.icu[,vname.imp]))
+  pctimp <- round((nimp / nmiss.org)*100)
+  
+  ## N, % of patient-days still missing after imputation
+  nmiss.imp <- sum(is.na(tbi.daily.icu[,vname.imp]))
+  pctmiss.imp <- round((nmiss.imp / nrow(tbi.daily.icu))*100)
+  
+  c("% (N) Missing,\nOriginal Data" =
+      paste0(pctmiss.org, '% (', format(nmiss.org, big.mark = ','), ')'),
+    "% (N) of Missing\nValues Imputed" = paste0(pctimp, '% (', format(nimp, big.mark = ','), ')'),
+    "% (N) Still Missing\nAfter Imputation" =
+      paste0(pctmiss.imp, '% (', format(nmiss.imp, big.mark = ','), ')'))
+}))
 
+rownames(clinical.imp.npct.missing) <- clinical.imp.covars
+
+## How many records had missing ICP / ICP > 120 in original data?
+n.icpmiss <- sum(is.na(tbi.daily.icu$max.icp))
+pct.icpmiss <- round((n.icpmiss / nrow(tbi.daily.icu))*100)
+npct.icpmiss <- paste0(pct.icpmiss, '% (', format(n.icpmiss, big.mark = ','), ')')
+
+n.icp120 <- sum(tbi.daily.icu$max.icp > 120, na.rm = TRUE)
+pct.icp120 <- round((n.icp120 / nrow(tbi.daily.icu))*100, digits = 2)
+npct.icp120 <- paste0(pct.icp120, '% (', format(n.icp120, big.mark = ','), ')')
+
+```
+
+#### `r table_nums("clinical_imputation")`
+Percentages for original and post-imputation missingness are out of the `r nrow(tbi.daily.icu)` in-hospital patient-days among those patients eligible for inclusion in our analyses.
+
+```{r printclinicalimp, results = 'asis'}
+panderOptions('table.emphasize.rownames', FALSE)
+panderOptions('keep.line.breaks', TRUE)
+pander(clinical.imp.npct.missing, keep.line.breaks = TRUE)
+
+```
+
+Additionally:
+
+- The liver component of the SOFA score was considered to be normal if no bilirubin was measured.
+- Missing maximum ICP was assumed to be normal, and assigned a random value from a uniform distribution ranging from 0 to 20 (normal range; imputed values were rounded, to result in integer scores). Maximum ICP > 120 was truncated to 120. In the original data, `r npct.icpmiss` records were missing ICP and assigned a random normal-range value, and `r npct.icp120` had ICP > 120.
+- When calculating final full and modified SOFA scores, components which were still missing after
+clinical imputation were assumed to be normal (component score = 0). For example, if a patient was hospitalized for five days and never had creatinine measured, that patient would be assumed to have no renal dysfunction during this hospitalization and would have SOFA renal scores of 0 on all five days (though the overall SOFA score would depend on the other components).
+- If no dose was recorded for medications or blood products on a given day, we assume the patient received no drug/product, and the dose is considered to be 0.
+- If no maximum motor score was available on Days 00 - 02, the *baseline* maximum motor score was considered to be normal and assigned a value of 6.
+
+There is still missing data after these imputation rules are implemented; for example, if a patient's glucose was never measured, there was never a value to carry forward or backward. Specific
+amounts of missingness and strategies for handling it will be detailed separately for each analysis.
 
 
 # Software Details
