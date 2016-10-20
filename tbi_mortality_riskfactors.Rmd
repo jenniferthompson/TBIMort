@@ -24,6 +24,7 @@ abstract: The following analyses examine baseline and in-hospital risk factors f
 
 ```{r knitrsetup, echo = FALSE, message = FALSE}
 knitr::opts_chunk$set(echo = TRUE, warning = FALSE, message = FALSE)
+options(width = 200)
 ```
 
 ```{r setup, message = FALSE, results='hide'}
@@ -31,6 +32,8 @@ knitr::opts_chunk$set(echo = TRUE, warning = FALSE, message = FALSE)
 space.3 <- paste(rep("&nbsp;", 3), collapse = '')
 space.6 <- paste(rep("&nbsp;", 6), collapse = '')
 space.9 <- paste(rep("&nbsp;", 9), collapse = '')
+space.12 <- paste(rep("&nbsp;", 12), collapse = '')
+space.15 <- paste(rep("&nbsp;", 15), collapse = '')
 
 ## Load libraries and original analysis data sets
 library(captioner)
@@ -38,18 +41,22 @@ library(tidyverse)
 library(pander)
 library(rms)
 
-## Set up figure, table numbering
+## -- Set up figure, table numbering using the captioner package -----------------------------------
 table_nums <- captioner(prefix = 'Table')
 table_nums(name = 'consort', caption = 'Cohort Inclusion and Exclusion')
-table_nums(name = 'descstats_oneobs', caption = 'Baseline, In-Hospital, & Discharge Characteristics')
+table_nums(name = 'descstats_oneobs',
+           caption = 'Baseline, In-Hospital, & Discharge Characteristics')
 table_nums(name = 'descstats_daily', caption = 'Daily In-Hospital Characteristics')
+table_nums(name = 'package_info', caption = 'R Packages Loaded')
+table_nums(name = 'mortality_patients', caption = 'Inclusion in Mortality Models')
+table_nums(name = 'mortality_missing', caption = 'Missing Data by Patient-Day for Mortality Models')
 
 ## Load analysis data sets
 load('AnalysisData/tbi_datasets.Rdata')
 
 ## -- Create analysis data sets including only ICU patients ----------------------------------------
-## Patients with an ICU LOS of at least 1 day
-icu.pts <- unique(filter(tbi.oneobs, !is.na(icu.los) & icu.los > 0)$mrn)
+## Patients with an ICU LOS of at least 1 day, admitted with blunt trauma
+icu.pts <- unique(filter(tbi.oneobs, !is.na(icu.los) & icu.los > 0 & pt.injury == 'Blunt')$mrn)
 
 ## Filter daily data
 tbi.daily.icu <- filter(tbi.daily, mrn %in% icu.pts)
@@ -73,45 +80,50 @@ and includes concussion without intracranial hemorrhage. Code used to create ana
 raw EMR data can be found
 [here](https://github.com/jenniferthompson/TBIMort/blob/master/tbimortality_datamgmt.R).
 
-For these analyses, we focused on patients admitted to the ICU.
-`r table_nums('consort', display = 'cite')` describes how patients were included and excluded from
-analyses.
+For these analyses, we focused on patients admitted to the ICU and who had blunt (vs penetrating)
+trauma. `r table_nums('consort', display = 'cite')` describes how patients were included and
+excluded from our broad cohort, with requirements for inclusion in **bold**. Patients included in
+each specific analysis will be described in each section, beginning with this group of
+`r length(pts.inc)`.
 
 ```{r createconsorttable}
 ## -- Calculate Ns for each group of patients included/excluded ------------------------------------
 ## Original number of TBI patients
 n.alltbi <- length(unique(tbi.oneobs$mrn))
 
-## Had ICU LOS >= 1 day?
-n.nolos <- sum(is.na(tbi.oneobs$icu.los))
-n.noicu <- with(tbi.oneobs, sum(!is.na(icu.los) & icu.los == 0))
+## Had penetrating vs blunt trauma
+n.injuryna <- sum(tbi.oneobs$pt.injury == 'Missing', na.rm = TRUE)
+n.penetrating <- sum(tbi.oneobs$pt.injury == 'Penetrating', na.rm = TRUE)
+n.blunt <- sum(tbi.oneobs$pt.injury == 'Blunt', na.rm = TRUE)
+
+## Blunt injury and had ICU LOS >= 1 day?
+n.nolos <- sum(is.na(subset(tbi.oneobs, pt.injury == 'Blunt')$icu.los))
+n.noicu <- with(subset(tbi.oneobs, pt.injury == 'Blunt'), sum(!is.na(icu.los) & icu.los == 0))
 n.icu <- length(icu.pts)
 
 ## No daily data vs included in main analyses (meaning, at least one day of daily data)
 n.nodaily <- length(icu.nodaily.pts)
 n.included.main <- length(pts.inc)
 
-## Died vs survived hospital stay; survivors will be included in FIM model
-n.diedinhosp <- with(tbi.oneobs.icu, sum(!is.na(hosp.death) & hosp.death == 'Yes'))
-n.survivors <- with(tbi.oneobs.icu, sum(!is.na(hosp.death) & hosp.death == 'No'))
-
 ## Create CONSORT table
 consort.table <- data.frame(Patients = c('All TBI Patients',
-                                         paste0(space.3, 'Missing ICU LOS data'),
-                                         paste0(space.3, '0 days in ICU'),
-                                         paste0(space.3, '>=1 day in ICU'),
-                                         paste0(space.6, 'Missing daily EMR data'),
-                                         paste0('**', space.6, 'Included in main analyses**'),
-                                         paste0(space.9, 'Died in hospital'),
-                                         paste0(space.9, 'Survived hospital stay (FIM model)')),
-                            N = c(n.alltbi, n.nolos, n.noicu, n.icu, n.nodaily,
-                                  paste0('**', n.included.main, '**'), n.diedinhosp, n.survivors))
+                                         paste0(space.3, 'Missing injury type'),
+                                         paste0(space.3, 'Penetrating injury'),
+                                         paste0(space.3, '**Blunt injury**'),
+                                         paste0(space.6, 'Missing ICU LOS data'),
+                                         paste0(space.6, '0 days in ICU'),
+                                         paste0(space.6, '**>=1 day in ICU**'),
+                                         paste0(space.9, 'Missing daily EMR data'),
+                                         paste0(space.9, '**Eligible for inclusion**')),
+                            N = c(n.alltbi, n.injuryna, n.penetrating, paste0('**', n.blunt, '**'),
+                                  n.nolos, n.noicu, paste0('**', n.icu, '**'), n.nodaily,
+                                  paste0('**', n.included.main, '**')))
 
 ```
 
 #### `r table_nums('consort')`
 ```{r printconsorttable, results = 'asis'}
-pander(consort.table, justify = c('left', 'right'))
+pandoc.table(consort.table, justify = c('left', 'right'))
 
 ```
 #### `r table_nums('descstats_oneobs')`
@@ -131,4 +143,17 @@ summaryM(mental.status + max.motor.imp + pupil.react.imp + min.glucose.imp + min
            tot.clonid + units.cryo + units.plasma + units.platelets + units.prbc ~ 1,
          data = tbi.daily.icu)
 
+```
+
+
+
+
+
+
+
+# Software Details
+`r devtools::session_info()$platform$version` was used for all analyses. `r table_nums('package_info', display = 'cite')` shows all add-on packages loaded.
+
+```{r technical, results = 'asis'}
+pander(devtools::session_info()$packages)
 ```
