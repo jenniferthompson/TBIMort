@@ -35,11 +35,14 @@ space.9 <- paste(rep("&nbsp;", 9), collapse = '')
 space.12 <- paste(rep("&nbsp;", 12), collapse = '')
 space.15 <- paste(rep("&nbsp;", 15), collapse = '')
 
-## Load libraries and original analysis data sets
+## Load libraries
 library(captioner)
 library(tidyverse)
 library(pander)
 library(rms)
+
+## Source function for creating time-varying data sets for Cox models
+source('tbi_timevarying.R')
 
 ## -- Set up figure, table numbering using the captioner package -----------------------------------
 table_nums <- captioner(prefix = 'Table')
@@ -49,13 +52,17 @@ table_nums(name = 'descstats_oneobs',
 table_nums(name = 'descstats_daily', caption = 'Daily In-Hospital Characteristics')
 table_nums(name = 'clinical_imputation',
            caption = 'Missingness among Daily Variables Imputed by Rule')
-table_nums(name = 'mortality_patients', caption = 'Inclusion in Mortality Models')
-table_nums(name = 'mortality_missing', caption = 'Missing Data by Patient-Day for Mortality Models')
+table_nums(name = 'mortality_missing_baseline', caption = 'Exclusion from Mortality Models')
+table_nums(name = 'mortality_missing_daily',
+           caption = 'Missing Data by Patient-Day for Mortality Models')
 
 table_nums(name = 'package_info', caption = 'R Packages Loaded')
 
-## Load analysis data sets
+## -- Load analysis data sets ----------------------------------------------------------------------
 load('AnalysisData/tbi_datasets.Rdata')
+
+## Shorten very long categories of CPR
+levels(tbi.oneobs$cpr.yn) <- c('Not Performed', 'Performed')
 
 ## -- Create analysis data sets including only ICU patients ----------------------------------------
 ## Patients with an ICU LOS of at least 1 day, admitted with blunt trauma
@@ -221,6 +228,84 @@ clinical imputation were assumed to be normal (component score = 0). For example
 There is still missing data after these imputation rules are implemented; for example, if a patient's glucose was never measured, there was never a value to carry forward or backward. Specific
 amounts of missingness and strategies for handling it will be detailed separately for each analysis.
 
+# Mortality Outcomes
+To identify potential risk factors for both in-hospital and three-year mortality among this cohort,
+we will use Cox proportional hazards regression with both baseline and time-dependent covariates.
+
+## Model Covariates
+We will include the following covariates in both models (reference levels for categorical variables are listed first):
+
+- Baseline
+    - Age at admission
+    - Gender (`r paste(levels(tbi.oneobs.icu$gender), collapse = '; ')`)
+    - Insurance type (`r paste(levels(tbi.oneobs.icu$insurance.code), collapse = '; ')`)
+    - Marshall Class equivalent (`r paste(levels(tbi.oneobs.icu$pt.marshall), collapse = '; ')`)
+    - Cerebral subarachnoid hemorrhage (SAH) (`r paste(levels(tbi.oneobs.icu$pt.cerebral.na), collapse = '; ')`)
+    - Injurity Severity Score (ISS)
+    - CPR (`r paste(levels(tbi.oneobs.icu$cpr.yn), collapse = '; ')`)
+- Daily In-Hospital (all per 24h)
+    - Maximum motor score
+    - Pupil reactivity (`r paste(levels(tbi.daily.icu$pupil.react.imp), collapse = '; ')`)
+    - Minimum glucose
+    - Minimum hemoglobin
+    - Minimum sodium
+    - Mental status (`r paste(levels(tbi.daily.icu$mental.status), collapse = '; ')`)
+    - Modified SOFA score (excluding CNS component)
+    - Maximum ICP score, two ways:
+        - Continuous (original value, though many are imputed as noted above)
+        - Dichotomous, with any value <20 considered normal
+    - 24-hour doses of medications: all will be cube root transformed to mitigate the influence of extremely high values
+        - Opioids (hydromorphone, morphine, hydrocodone, methadone, remifentanil, and fentanyl; converted to fentanyl equivalents)
+        - Benzodiazepines (lorazepam, diazepam, alprazolam, clonazepine, and midazolam; all converted to midazolam equivalents)
+        - Antipsychotics (olanzapine, quetiapine, risperidone, ziprasidone, and haloperidol; all converted to haloperidol equivalents)
+        - Beta-blockers (propranolol, labetalol, esmolol, and metoprolol; all converted to metoprolol equivalents)
+        - Propofol
+        - Dexmedetomidine
+        - Pentobarbital
+        - Clonidine
+    - 24-hour units of blood products:
+        - PRBC
+        - Plasma
+        - Platelets
+        - Cryo
+
+Due to the amount of missingness in our data but also the complexity of performing multiple imputation with both baseline (time-constant) and daily (time-varying) covariates, we will include in these models only patients with complete baseline data, and will use multiple imputation to handle missing daily data.
+
+```{r mortalitymissing}
+## List of baseline covariates for mortality models
+mortality.baseline.covars <- c('age', 'gender', 'insurance.code', 'pt.marshall', 'pt.cerebral.na',
+                               'iss', 'cpr.yn')
+
+## How many patients are missing *any* of these baseline variables?
+tbi.oneobs.icu$include.mortality <- rowSums(is.na(tbi.oneobs.icu[,mortality.baseline.covars])) == 0
+n.exc.mortality <- sum(!tbi.oneobs.icu$include.mortality)
+
+mortality.baseline.missing <- as.data.frame(do.call(rbind,
+                                                    lapply(mortality.baseline.covars,
+                                                           FUN = function(vname){
+  nmiss <- sum(is.na(tbi.oneobs.icu[,vname]))
+  pctall.miss <- round((nmiss / length(pts.inc))*100, 2)
+  pctexc.miss <- round((nmiss / n.exc.mortality)*100, 0)
+  c(nmiss, pctall.miss, pctexc.miss)
+})))
+mortality.baseline.missing <- cbind(mortality.baseline.covars, mortality.baseline.missing)
+names(mortality.baseline.missing) <- c('Covariate',
+                                       'N Missing Covariate',
+                                       '% Eligible Patients',
+                                       '% Excluded Patients')
+mortality.baseline.missing <- mortality.baseline.missing[mortality.baseline.missing[,2] > 0,]
+rownames(mortality.baseline.missing) <- NULL
+
+```
+
+Out of `r length(pts.inc)` patients eligible to be included in the mortality models, `r n.exc.mortality` are missing one or more baseline covariates and will be excluded. `r table_nums("mortality_missing_baseline", display = 'cite')` details how many otherwise eligible
+patients are missing which baseline covariates.
+
+#### `r table_nums("mortality_missing_baseline")`
+```{r printmortalitymissing, results = 'asis'}
+pandoc.table(mortality.baseline.missing, justify = c('left', 'right', 'right', 'right'))
+
+```
 
 # Software Details
 `r devtools::session_info()$platform$version` was used for all analyses. `r table_nums('package_info', display = 'cite')` shows all add-on packages loaded.
