@@ -281,6 +281,9 @@ mortality.baseline.covars <- c('age', 'gender', 'insurance.code', 'pt.marshall',
 tbi.oneobs.icu$include.mortality <- rowSums(is.na(tbi.oneobs.icu[,mortality.baseline.covars])) == 0
 n.exc.mortality <- sum(!tbi.oneobs.icu$include.mortality)
 
+## MRNs of patients included in mortality models
+pts.inc.mort.inhosp <- unique(subset(tbi.oneobs.icu, include.mortality)$mrn)
+
 mortality.baseline.missing <- as.data.frame(do.call(rbind,
                                                     lapply(mortality.baseline.covars,
                                                            FUN = function(vname){
@@ -299,7 +302,8 @@ rownames(mortality.baseline.missing) <- NULL
 
 ```
 
-Out of `r length(pts.inc)` patients eligible to be included in the mortality models, `r n.exc.mortality` are missing one or more baseline covariates and will be excluded. `r table_nums("mortality_missing_baseline", display = 'cite')` details how many otherwise eligible
+Out of `r length(pts.inc)` patients eligible to be included in the mortality models, `r n.exc.mortality` are missing one or more baseline covariates and will be excluded, leaving **`r length(pts.inc.mort.inhosp)`** patients included in these models.
+`r table_nums("mortality_missing_baseline", display = 'cite')` details how many otherwise eligible
 patients are missing which baseline covariates.
 
 #### `r table_nums("mortality_missing_baseline")`
@@ -309,9 +313,11 @@ pandoc.table(mortality.baseline.missing, justify = c('left', 'right', 'right', '
 ```
 
 ```{r createmortalitydata}
-## -- Create data set for in-hospital mortality model ----------------------------------------------
-pts.inc.mort.inhosp <- unique(subset(tbi.oneobs.icu, include.mortality)$mrn)
+## Functions to set missing values to/from -9999 so they don't kicked out of timevarying.data()
+set.na.9999 <- function(x){ ifelse(is.na(x), -9999, x) }
+set.backto.na <- function(x){ ifelse(x == -9999, NA, x) }
 
+## -- Create data set for in-hospital mortality model ----------------------------------------------
 ## Baseline information
 base.mort.inhosp <- tbi.oneobs.icu %>%
   filter(include.mortality) %>%
@@ -319,9 +325,6 @@ base.mort.inhosp <- tbi.oneobs.icu %>%
          time.death.dc)
 
 ## Daily data
-set.na.9999 <- function(x){ ifelse(is.na(x), -9999, x) }
-set.backto.na <- function(x){ ifelse(x == -9999, NA, x) }
-
 daily.mort.org <- tbi.daily.icu %>%
   filter(mrn %in% pts.inc.mort.inhosp) %>%
   ## We have missingness for lab values, mental status, pupil reactivity, max motor. By default,
@@ -362,6 +365,44 @@ modeldata.mort.inhosp <- tv.mort.inhosp %>%
                                 levels = 1:3, labels = levels(tbi.daily$mental.status))) %>%
   ## Add on baseline variables
   left_join(base.mort.inhosp, ., by = 'mrn')
+
+```
+
+## In-Hospital Mortality
+```{r mortinhosp}
+## -- Imputation for in-hospital mortality ---------------------------------------------------------
+areg.mort.inhosp <- aregImpute(~ age + gender + insurance.code + iss + cpr.yn + pt.marshall +
+                                 pt.cerebral.na + hosp.death + I(max.motor.imp) + pupil.react.imp +
+                                 min.glucose.imp + min.hemoglobin.imp + min.sodium.imp +
+                                 mental.status + sofa.mod.nanormal.imp + max.icp.imp +
+                                 tot.opioid.cube + tot.benzo.cube + tot.antipsyc.cube +
+                                 tot.betablock.cube + tot.propofol.cube + tot.dex.cube +
+                                 I(tot.pento.cube) + tot.clonid.cube + units.prbc +
+                                 units.plasma + units.platelets + units.cryo + start.day,
+                               data = modeldata.mort.inhosp,
+                               n.impute = 5, burnin = 3)
+
+## -- Fit model for in-hospital mortality ----------------------------------------------------------
+Surv.mort.inhosp <- with(modeldata.mort.inhosp, Surv(time = start.day,
+                                                     time2 = stop.day,
+                                                     event = as.numeric(had.event)))
+mod.mort.inhosp <- fit.mult.impute(Surv.mort.inhosp ~ rcs(age, 4) + gender + insurance.code +
+                                     rcs(iss, 4) + cpr.yn + pt.marshall + pt.cerebral.na +
+                                     I(max.motor.imp) + pupil.react.imp + rcs(min.glucose.imp, 4) +
+                                     rcs(min.hemoglobin.imp, 4) + rcs(min.sodium.imp, 4) +
+                                     mental.status + rcs(sofa.mod.nanormal.imp, 4) +
+                                     rcs(max.icp.imp, 4) + rcs(tot.opioid.cube, 4) +
+                                     rcs(tot.benzo.cube, 4) + rcs(tot.antipsyc.cube, 4) +
+                                     rcs(tot.betablock.cube, 4) + rcs(tot.propofol.cube, 4) +
+                                     rcs(tot.dex.cube, 4) + I(tot.pento.cube) +
+                                     rcs(tot.clonid.cube, 4) + rcs(units.prbc, 3) +
+                                     rcs(units.plasma, 3) + rcs(units.platelets, 3) +
+                                     rcs(units.cryo, 3),
+                                   fitter = cph,
+                                   xtrans = areg.mort.inhosp,
+                                   data = modeldata.mort.inhosp,
+                                   x = TRUE, y = TRUE)
+
 
 ```
 
