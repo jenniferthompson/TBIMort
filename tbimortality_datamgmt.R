@@ -106,10 +106,10 @@ daily.data <- left_join(daily.data, base.wt.data, by = 'mrn')
 ## Pupil reactivity
 daily.data$n.pupil.react <-
   ifelse(rowSums(!is.na(daily.data[,c('l.pupil.day', 'r.pupil.day')])) == 0, NA,
-         rowSums(daily.data[,c('l.pupil.day', 'r.pupil.day')] == 'Reactive', na.rm = TRUE))
+         2 - rowSums(daily.data[,c('l.pupil.day', 'r.pupil.day')] == 'Reactive', na.rm = TRUE))
 daily.data$pupil.react <- factor(daily.data$n.pupil.react,
                                  levels = 0:2,
-                                 labels = c('Both fixed', 'One reactive', 'Both reactive'))
+                                 labels = c('Both reactive', 'One reactive', 'Both fixed'))
 
 ## Mental status:
 ## coma = minimum RASS = -5 or -4
@@ -288,7 +288,7 @@ daily.data <- cbind(daily.data, imputed.daily.cbind)
 ## Function did not preserve levels of pupil.react; re-factor
 daily.data$pupil.react.imp <- factor(daily.data$pupil.react.imp - 1,
                                      levels = 0:2,
-                                     labels = c('Both fixed', 'One reactive', 'Both reactive'))
+                                     labels = c('Both reactive', 'One reactive', 'Both fixed'))
 
 ## Impute max ICP: if higher than 120, assume 120; if missing, impute uniform value between 0-20
 impute.normal <- function(x, min.val, max.val){
