@@ -58,11 +58,22 @@ table_nums(name = 'mortality_missing_daily',
 
 table_nums(name = 'package_info', caption = 'R Packages Loaded')
 
-## -- Load analysis data sets ----------------------------------------------------------------------
+figure_nums <- captioner(prefix = 'Figure')
+figure_nums(name = 'dailydrughist',
+            caption = 'Daily Drug Doses and Blood Product among Analysis Cohort')
+
+## -- Load analysis data sets, additional data management ------------------------------------------
 load('AnalysisData/tbi_datasets.Rdata')
 
 ## Shorten very long categories of CPR
 levels(tbi.oneobs$cpr.yn) <- c('Not Performed', 'Performed')
+
+## Combine non-RBC blood products into a dichotomous received/not received variable
+tbi.daily$any.plasmaplt <-
+  factor(ifelse(rowSums(tbi.daily[,c(paste0('units.', c('cryo', 'plasma', 'platelets')))] > 0) > 0,
+                2, 1),
+         levels = 1:2, labels = c('None', 'At least one'))
+label(tbi.daily$any.plasmaplt) <- '24h plasma and/or platelets'
 
 ## -- Create analysis data sets including only ICU patients ----------------------------------------
 ## Patients with an ICU LOS of at least 1 day, admitted with blunt trauma
@@ -91,7 +102,10 @@ raw EMR data can be found
 [here](https://github.com/jenniferthompson/TBIMort/blob/master/tbimortality_datamgmt.R).
 
 For these analyses, we focused on patients admitted to the ICU and who had blunt (vs penetrating)
-trauma. `r table_nums('consort', display = 'cite')` describes how patients were included and
+trauma.
+
+## CONSORT Information
+`r table_nums('consort', display = 'cite')` describes how patients were included and
 excluded from our broad cohort, with requirements for inclusion in **bold**. Patients included in
 each specific analysis will be described in each section, beginning with this group of
 `r length(pts.inc)`.
@@ -136,6 +150,8 @@ consort.table <- data.frame(Patients = c('All TBI Patients',
 pandoc.table(consort.table, justify = c('left', 'right'))
 
 ```
+
+## Descriptive Statistics for Baseline, Summary and Daily Characteristics
 #### `r table_nums('descstats_oneobs')`
 ```{r printdescstatsoneobs, results = 'markup'}
 summaryM(age + gender + race + insurance.code + iss + cpr.yn + pt.marshall + pt.cerebral +
@@ -150,8 +166,43 @@ summaryM(age + gender + race + insurance.code + iss + cpr.yn + pt.marshall + pt.
 summaryM(mental.status + max.motor.imp + pupil.react.imp + min.glucose.imp + min.hemoglobin.imp +
            min.sodium.imp + max.icp.imp + max.icp.dich + sofa.nanormal.imp + tot.benzo +
            tot.opioid + tot.propofol + tot.dex + tot.antipsyc + tot.betablock + tot.pento +
-           tot.clonid + units.cryo + units.plasma + units.platelets + units.prbc ~ 1,
+           tot.clonid + any.plasmaplt + units.cryo + units.plasma + units.platelets +
+           units.prbc ~ 1,
          data = tbi.daily.icu)
+
+```
+
+## Exploratory Analyses
+```{r exploratorydatamgmt}
+## -- Describe daily drug, blood product doses -----------------------------------------------------
+## Raw doses for histograms
+daily.drugs <- tbi.daily.icu %>%
+  select(mrn, study.day, tot.opioid.cube:units.cryo) %>%
+  gather(key = drug.or.product, value = amount, tot.opioid.cube:units.cryo)
+
+## Summary statistics for annotation
+daily.drugs.summary <- daily.drugs %>%
+  group_by(drug.or.product) %>%
+  summarise(n.zero = sum(amount == 0),
+            pct.zero = round(mean(amount == 0)*100, digits = 1),
+            min.nonzero = round(min(amount[amount != 0]), 2),
+            med.nonzero = round(median(amount[amount != 0]), 2),
+            max.nonzero = round(max(amount[amount != 0]), 2)) %>%
+  mutate(results.str = paste0('% (N) Zero: ', pct.zero, '% (', n.zero,
+                              ')\nMedian (Range) among Non-Zero:\n',
+                              med.nonzero, ' (', min.nonzero, ', ', max.nonzero, ')'))
+
+```
+
+To guide our choice of covariates in models with time-varying covariates, we plotted histograms and detailed summary statistics for all drug doses and blood products given on a daily basis (`r figure_nums('dailydrughist', display = 'cite')`).
+
+#### `r figure_nums('dailydrughist')`
+```{r exploratoryprint, results = 'asis', fig.width=7, fig.height = 10}
+ggplot(data = daily.drugs, aes(x = amount)) +
+  facet_wrap(~ drug.or.product, ncol = 2, scales = 'free_x') +
+  geom_histogram() +
+  geom_text(data = daily.drugs.summary, aes(label = results.str, x = max.nonzero),
+            y = 30000, hjust = 1, vjust = 1, size = 3)
 
 ```
 
@@ -262,15 +313,24 @@ We will include the following covariates in both models (reference levels for ca
         - Beta-blockers (propranolol, labetalol, esmolol, and metoprolol; all converted to metoprolol equivalents)
         - Propofol
         - Dexmedetomidine
-        - Pentobarbital
         - Clonidine
     - 24-hour units of blood products:
-        - PRBC
-        - Plasma
-        - Platelets
-        - Cryo
+        - PRBC, units given
+        - Plasma, platelets, and/or cryo: yes (received at least one) vs none given
 
-Due to the amount of missingness in our data but also the complexity of performing multiple imputation with both baseline (time-constant) and daily (time-varying) covariates, we will include in these models only patients with complete baseline data, and will use multiple imputation to handle missing daily data.
+The following covariates were considered for inclusion, but changed or excluded as follows:
+
+- Pentobarbital dose was originally slated as a covariate, but because there was so little pentobarbital use in our cohort, this covariate would only create problems while adding essentially
+no information. See `r figure_nums('dailydrughist', display = 'cite')`.
+- Plasma, platelets and cryo were originally slated to be included as continuous units given;
+however, because so few of these products were used (see
+`r figure_nums('dailydrughist', display = 'cite')`), these were combined into a dichotomous yes/no
+variable.
+
+Due to the amount of missingness in our data but also the complexity of performing multiple
+imputation with both baseline (time-constant) and daily (time-varying) covariates, we will include
+in these models only patients with complete baseline data, and will use multiple imputation to
+handle missing daily data.
 
 ```{r mortalitymissing}
 ## List of baseline covariates for mortality models
@@ -340,18 +400,17 @@ daily.mort.org <- tbi.daily.icu %>%
   select(mrn, study.day, max.motor.imp, pupil.react.imp, min.glucose.imp, min.hemoglobin.imp,
          min.sodium.imp, mental.status, sofa.mod.nanormal.imp, max.icp.imp, max.icp.dich,
          tot.opioid.cube, tot.benzo.cube, tot.antipsyc.cube, tot.betablock.cube, tot.propofol.cube,
-         tot.dex.cube, tot.pento.cube, tot.clonid.cube, units.prbc, units.plasma, units.platelets,
-         units.cryo)
+         tot.dex.cube, tot.clonid.cube, units.prbc, any.plasmaplt)
 
 ## Create beginning time-varying data set
 tv.mort.inhosp <- timevarying.data(idvar = 'mrn',
-                                  recvar = 'study.day',
-                                  org.data = daily.mort.org,
-                                  time.var = 'time.death.dc',
-                                  event.var = 'hosp.death',
-                                  event.string = 'Yes',
-                                  data.set = tbi.oneobs.icu,
-                                  out.strings = c('Alive through today', 'Died today'))
+                                   recvar = 'study.day',
+                                   org.data = daily.mort.org,
+                                   time.var = 'time.death.dc',
+                                   event.var = 'hosp.death',
+                                   event.string = 'Yes',
+                                   data.set = tbi.oneobs.icu,
+                                   out.strings = c('Alive through today', 'Died today'))
 
 modeldata.mort.inhosp <- tv.mort.inhosp %>%
   ## Replace -9999s with NAs, refactor applicable variables
@@ -374,11 +433,10 @@ modeldata.mort.inhosp <- tv.mort.inhosp %>%
 areg.mort.inhosp <- aregImpute(~ age + gender + insurance.code + iss + cpr.yn + pt.marshall +
                                  pt.cerebral.na + hosp.death + I(max.motor.imp) + pupil.react.imp +
                                  min.glucose.imp + min.hemoglobin.imp + min.sodium.imp +
-                                 mental.status + sofa.mod.nanormal.imp + max.icp.imp +
+                                 mental.status + sofa.mod.nanormal.imp + max.icp.dich +
                                  tot.opioid.cube + tot.benzo.cube + tot.antipsyc.cube +
                                  tot.betablock.cube + tot.propofol.cube + tot.dex.cube +
-                                 I(tot.pento.cube) + tot.clonid.cube + units.prbc +
-                                 units.plasma + units.platelets + units.cryo + start.day,
+                                 tot.clonid.cube + units.prbc + any.plasmaplt + start.day,
                                data = modeldata.mort.inhosp,
                                n.impute = 5, burnin = 3)
 
@@ -386,22 +444,26 @@ areg.mort.inhosp <- aregImpute(~ age + gender + insurance.code + iss + cpr.yn + 
 Surv.mort.inhosp <- with(modeldata.mort.inhosp, Surv(time = start.day,
                                                      time2 = stop.day,
                                                      event = as.numeric(had.event)))
+
+## Original specification
 mod.mort.inhosp <- fit.mult.impute(Surv.mort.inhosp ~ rcs(age, 4) + gender + insurance.code +
                                      rcs(iss, 4) + cpr.yn + pt.marshall + pt.cerebral.na +
-                                     I(max.motor.imp) + pupil.react.imp + rcs(min.glucose.imp, 4) +
+                                     max.motor.imp + pupil.react.imp + rcs(min.glucose.imp, 4) +
                                      rcs(min.hemoglobin.imp, 4) + rcs(min.sodium.imp, 4) +
                                      mental.status + rcs(sofa.mod.nanormal.imp, 4) +
-                                     rcs(max.icp.imp, 4) + rcs(tot.opioid.cube, 4) +
-                                     rcs(tot.benzo.cube, 4) + rcs(tot.antipsyc.cube, 4) +
+                                     max.icp.dich + rcs(tot.opioid.cube, 4) +
+                                     rcs(tot.benzo.cube, 4) + rcs(tot.antipsyc.cube, 3) +
                                      rcs(tot.betablock.cube, 4) + rcs(tot.propofol.cube, 4) +
-                                     rcs(tot.dex.cube, 4) + I(tot.pento.cube) +
-                                     rcs(tot.clonid.cube, 4) + rcs(units.prbc, 3) +
-                                     rcs(units.plasma, 3) + rcs(units.platelets, 3) +
-                                     rcs(units.cryo, 3),
+                                     rcs(tot.dex.cube, 3) + rcs(tot.clonid.cube, 3) +
+                                     rcs(units.prbc, 3) + any.plasmaplt,
                                    fitter = cph,
                                    xtrans = areg.mort.inhosp,
                                    data = modeldata.mort.inhosp,
                                    x = TRUE, y = TRUE)
+
+dd.mort.inhosp <- datadist(modeldata.mort.inhosp)
+options(datadist = 'dd.mort.inhosp', width = 150)
+summary(mod.mort.inhosp)
 
 
 ```
