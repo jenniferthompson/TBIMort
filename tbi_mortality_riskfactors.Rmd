@@ -61,6 +61,7 @@ table_nums(name = 'package_info', caption = 'R Packages Loaded')
 figure_nums <- captioner(prefix = 'Figure')
 figure_nums(name = 'dailydrughist',
             caption = 'Daily Drug Doses and Blood Product among Analysis Cohort')
+figure_nums(name = 'mortality_inhosp_zph', 'In-Hospital Mortality: Proportional Hazards Assumption')
 
 ## -- Load analysis data sets, additional data management ------------------------------------------
 load('AnalysisData/tbi_datasets.Rdata')
@@ -90,7 +91,7 @@ tbi.daily <- tbi.daily %>%
          any.pento = any.drug(tot.pento),
          any.propofol = any.drug(tot.propofol),
          ## Combined dichotomous variable for alpha-2 agonists (dex/clonidine)
-         any.alpha2 = factor(as.numeric(any.dex == 'Some' | any.clonid == 'Some'),
+         any.alpha2 = factor(as.numeric(any.dex == 'Some' | any.clonid == 'Some') + 1,
                              levels = 1:2, labels = c('Neither', 'One or both')))
 
 label(tbi.daily$any.prbc) <- '24h PRBC'
@@ -432,7 +433,7 @@ daily.mort.org <- tbi.daily.icu %>%
   select(mrn, study.day, max.motor.imp, pupil.react.imp, min.glucose.imp, min.hemoglobin.imp,
          min.sodium.imp, mental.status, sofa.mod.nanormal.imp, max.icp.imp, max.icp.dich,
          tot.opioid.cube, tot.benzo.cube, tot.antipsyc.cube, tot.betablock.cube, tot.propofol.cube,
-         tot.dex.cube, tot.clonid.cube, any.prbc, any.plasmaplt)
+         any.alpha2, any.dex, tot.clonid.cube, any.prbc, any.plasmaplt)
 
 ## Create beginning time-varying data set
 tv.mort.inhosp <- timevarying.data(idvar = 'mrn',
@@ -460,43 +461,53 @@ modeldata.mort.inhosp <- tv.mort.inhosp %>%
 ```
 
 ## In-Hospital Mortality
-```{r mortinhosp}
-# ## -- Imputation for in-hospital mortality ---------------------------------------------------------
-# areg.mort.inhosp <- aregImpute(~ age + gender + insurance.code + iss + cpr.yn + pt.marshall +
-#                                  pt.cerebral.na + hosp.death + I(max.motor.imp) + pupil.react.imp +
-#                                  min.glucose.imp + min.hemoglobin.imp + min.sodium.imp +
-#                                  mental.status + sofa.mod.nanormal.imp + max.icp.dich +
-#                                  tot.opioid.cube + tot.benzo.cube + tot.antipsyc.cube +
-#                                  tot.betablock.cube + tot.propofol.cube + tot.dex.cube +
-#                                  tot.clonid.cube + any.prbc + any.plasmaplt + start.day,
-#                                data = modeldata.mort.inhosp,
-#                                n.impute = 5, burnin = 3)
-# 
-# ## -- Fit model for in-hospital mortality ----------------------------------------------------------
-# Surv.mort.inhosp <- with(modeldata.mort.inhosp, Surv(time = start.day,
-#                                                      time2 = stop.day,
-#                                                      event = as.numeric(had.event)))
-# 
-# ## Original specification
-# mod.mort.inhosp <- fit.mult.impute(Surv.mort.inhosp ~ rcs(age, 4) + gender + insurance.code +
-#                                      rcs(iss, 4) + cpr.yn + pt.marshall + pt.cerebral.na +
-#                                      max.motor.imp + pupil.react.imp + rcs(min.glucose.imp, 4) +
-#                                      rcs(min.hemoglobin.imp, 4) + rcs(min.sodium.imp, 4) +
-#                                      mental.status + rcs(sofa.mod.nanormal.imp, 4) +
-#                                      max.icp.dich + rcs(tot.opioid.cube, 4) +
-#                                      rcs(tot.benzo.cube, 4) + tot.antipsyc.cube +
-#                                      rcs(tot.betablock.cube, 4) + tot.propofol.cube +
-#                                      tot.dex.cube + tot.clonid.cube +
-#                                      any.prbc + any.plasmaplt,
-#                                    fitter = cph,
-#                                    xtrans = areg.mort.inhosp,
-#                                    data = modeldata.mort.inhosp,
-#                                    x = TRUE, y = TRUE)
-# 
-# dd.mort.inhosp <- datadist(modeldata.mort.inhosp)
-# options(datadist = 'dd.mort.inhosp', width = 150)
-# summary(mod.mort.inhosp)
+```{r mortinhospfitmod}
+## -- Imputation for in-hospital mortality ---------------------------------------------------------
+set.seed(56)
+areg.mort.inhosp <- aregImpute(~ age + gender + insurance.code + iss + cpr.yn + pt.marshall +
+                                 pt.cerebral.na + hosp.death + I(max.motor.imp) + pupil.react.imp +
+                                 min.glucose.imp + min.hemoglobin.imp + min.sodium.imp +
+                                 mental.status + sofa.mod.nanormal.imp + max.icp.dich +
+                                 tot.opioid.cube + tot.benzo.cube + tot.antipsyc.cube +
+                                 tot.betablock.cube + tot.propofol.cube + any.dex +
+                                 tot.clonid.cube + any.prbc + any.plasmaplt + start.day,
+                               data = modeldata.mort.inhosp,
+                               n.impute = 5, burnin = 3)
 
+## -- Fit model for in-hospital mortality ----------------------------------------------------------
+Surv.mort.inhosp <- with(modeldata.mort.inhosp, Surv(time = start.day,
+                                                     time2 = stop.day,
+                                                     event = as.numeric(had.event)))
+
+mod.mort.inhosp <- fit.mult.impute(Surv.mort.inhosp ~ rcs(age, 4) + gender + insurance.code +
+                                     rcs(iss, 4) + cpr.yn + pt.marshall + pt.cerebral.na +
+                                     max.motor.imp + pupil.react.imp + rcs(min.glucose.imp, 4) +
+                                     rcs(min.hemoglobin.imp, 4) + rcs(min.sodium.imp, 4) +
+                                     mental.status + rcs(sofa.mod.nanormal.imp, 4) +
+                                     max.icp.dich +
+                                     ## Drug doses with enough variability to include w/ splines
+                                     rcs(tot.opioid.cube, 4) + rcs(tot.benzo.cube, 4) +
+                                     rcs(tot.betablock.cube, 4) +
+                                     ## 3 drugs have too many 0s + otherwise sparse data,
+                                     ## can't fit splines
+                                     tot.antipsyc.cube + tot.propofol.cube + tot.clonid.cube +
+                                     ## Dex and blood products have too many 0s + wide range;
+                                     ## dichotomize
+                                     any.dex + any.prbc + any.plasmaplt,
+                                   fitter = cph,
+                                   xtrans = areg.mort.inhosp,
+                                   data = modeldata.mort.inhosp,
+                                   x = TRUE, y = TRUE)
+
+```
+
+### Model Assumptions
+#### `r figure_nums('mortality_inhosp_zph')`
+```{r mortinhospcheckph, results='asis'}
+## -- Check proportional hazard assumption ---------------------------------------------------------
+zph.mort.inhosp <- cox.zph(mod.mort.inhosp, transform = 'rank')
+
+plot(zph.mort.inhosp)
 
 ```
 
