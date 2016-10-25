@@ -75,6 +75,11 @@ tbi.daily$any.plasmaplt <-
          levels = 1:2, labels = c('None', 'At least one'))
 label(tbi.daily$any.plasmaplt) <- '24h plasma and/or platelets'
 
+## Dichotomous variable for PRBC
+tbi.daily$any.prbc <- factor(ifelse(tbi.daily$units.prbc > 0, 2, 1),
+                             levels = 1:2, labels = c('None', 'At least one unit'))
+label(tbi.daily$any.prbc) <- '24h PRBC'
+
 ## -- Create analysis data sets including only ICU patients ----------------------------------------
 ## Patients with an ICU LOS of at least 1 day, admitted with blunt trauma
 icu.pts <- unique(filter(tbi.oneobs, !is.na(icu.los) & icu.los > 0 & pt.injury == 'Blunt')$mrn)
@@ -166,7 +171,7 @@ summaryM(age + gender + race + insurance.code + iss + cpr.yn + pt.marshall + pt.
 summaryM(mental.status + max.motor.imp + pupil.react.imp + min.glucose.imp + min.hemoglobin.imp +
            min.sodium.imp + max.icp.imp + max.icp.dich + sofa.nanormal.imp + tot.benzo +
            tot.opioid + tot.propofol + tot.dex + tot.antipsyc + tot.betablock + tot.pento +
-           tot.clonid + any.plasmaplt + units.cryo + units.plasma + units.platelets +
+           tot.clonid + any.plasmaplt + units.cryo + units.plasma + units.platelets + any.prbc +
            units.prbc ~ 1,
          data = tbi.daily.icu)
 
@@ -177,8 +182,10 @@ summaryM(mental.status + max.motor.imp + pupil.react.imp + min.glucose.imp + min
 ## -- Describe daily drug, blood product doses -----------------------------------------------------
 ## Raw doses for histograms
 daily.drugs <- tbi.daily.icu %>%
-  select(mrn, study.day, tot.opioid.cube:units.cryo) %>%
-  gather(key = drug.or.product, value = amount, tot.opioid.cube:units.cryo)
+  select(mrn, study.day, tot.benzo.cube, tot.opioid.cube, tot.propofol.cube, tot.dex.cube,
+         tot.antipsyc.cube, tot.betablock.cube, tot.pento.cube, tot.clonid.cube, units.cryo,
+         units.plasma, units.platelets, units.prbc) %>%
+  gather(key = drug.or.product, value = amount, tot.benzo.cube:units.prbc)
 
 ## Summary statistics for annotation
 daily.drugs.summary <- daily.drugs %>%
@@ -424,47 +431,6 @@ modeldata.mort.inhosp <- tv.mort.inhosp %>%
                                 levels = 1:3, labels = levels(tbi.daily$mental.status))) %>%
   ## Add on baseline variables
   left_join(base.mort.inhosp, ., by = 'mrn')
-
-```
-
-## In-Hospital Mortality
-```{r mortinhosp}
-## -- Imputation for in-hospital mortality ---------------------------------------------------------
-areg.mort.inhosp <- aregImpute(~ age + gender + insurance.code + iss + cpr.yn + pt.marshall +
-                                 pt.cerebral.na + hosp.death + I(max.motor.imp) + pupil.react.imp +
-                                 min.glucose.imp + min.hemoglobin.imp + min.sodium.imp +
-                                 mental.status + sofa.mod.nanormal.imp + max.icp.dich +
-                                 tot.opioid.cube + tot.benzo.cube + tot.antipsyc.cube +
-                                 tot.betablock.cube + tot.propofol.cube + tot.dex.cube +
-                                 tot.clonid.cube + units.prbc + any.plasmaplt + start.day,
-                               data = modeldata.mort.inhosp,
-                               n.impute = 5, burnin = 3)
-
-## -- Fit model for in-hospital mortality ----------------------------------------------------------
-Surv.mort.inhosp <- with(modeldata.mort.inhosp, Surv(time = start.day,
-                                                     time2 = stop.day,
-                                                     event = as.numeric(had.event)))
-
-## Original specification
-mod.mort.inhosp <- fit.mult.impute(Surv.mort.inhosp ~ rcs(age, 4) + gender + insurance.code +
-                                     rcs(iss, 4) + cpr.yn + pt.marshall + pt.cerebral.na +
-                                     max.motor.imp + pupil.react.imp + rcs(min.glucose.imp, 4) +
-                                     rcs(min.hemoglobin.imp, 4) + rcs(min.sodium.imp, 4) +
-                                     mental.status + rcs(sofa.mod.nanormal.imp, 4) +
-                                     max.icp.dich + rcs(tot.opioid.cube, 4) +
-                                     rcs(tot.benzo.cube, 4) + rcs(tot.antipsyc.cube, 3) +
-                                     rcs(tot.betablock.cube, 4) + rcs(tot.propofol.cube, 4) +
-                                     rcs(tot.dex.cube, 3) + rcs(tot.clonid.cube, 3) +
-                                     rcs(units.prbc, 3) + any.plasmaplt,
-                                   fitter = cph,
-                                   xtrans = areg.mort.inhosp,
-                                   data = modeldata.mort.inhosp,
-                                   x = TRUE, y = TRUE)
-
-dd.mort.inhosp <- datadist(modeldata.mort.inhosp)
-options(datadist = 'dd.mort.inhosp', width = 150)
-summary(mod.mort.inhosp)
-
 
 ```
 
