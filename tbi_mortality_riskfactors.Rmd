@@ -75,10 +75,34 @@ tbi.daily$any.plasmaplt <-
          levels = 1:2, labels = c('None', 'At least one'))
 label(tbi.daily$any.plasmaplt) <- '24h plasma and/or platelets'
 
-## Dichotomous variable for PRBC
-tbi.daily$any.prbc <- factor(ifelse(tbi.daily$units.prbc > 0, 2, 1),
-                             levels = 1:2, labels = c('None', 'At least one unit'))
+## Dichotomous variables for PRBC, all drugs
+any.drug <- function(x){ factor(ifelse(x == 0, 1, 2), levels = 1:2, labels = c('None', 'Some')) }
+
+tbi.daily <- tbi.daily %>%
+  mutate(any.prbc = factor(ifelse(units.prbc > 0, 2, 1),
+                           levels = 1:2, labels = c('None', 'At least some')),
+         any.antipsyc = any.drug(tot.antipsyc),
+         any.benzo = any.drug(tot.benzo),
+         any.betablock = any.drug(tot.betablock),
+         any.clonid = any.drug(tot.clonid),
+         any.dex = any.drug(tot.dex),
+         any.opioid = any.drug(tot.opioid),
+         any.pento = any.drug(tot.pento),
+         any.propofol = any.drug(tot.propofol),
+         ## Combined dichotomous variable for alpha-2 agonists (dex/clonidine)
+         any.alpha2 = factor(as.numeric(any.dex == 'Some' | any.clonid == 'Some'),
+                             levels = 1:2, labels = c('Neither', 'One or both')))
+
 label(tbi.daily$any.prbc) <- '24h PRBC'
+label(tbi.daily$any.antipsyc) <- '24h antipsychotics, y/n'
+label(tbi.daily$any.benzo) <- '24h benzodiazepines, y/n'
+label(tbi.daily$any.betablock) <- '24h beta-blockers, y/n'
+label(tbi.daily$any.clonid) <- '24h clonidine, y/n'
+label(tbi.daily$any.dex) <- '24h dexmedetomidine, y/n'
+label(tbi.daily$any.opioid) <- '24h opioids, y/n'
+label(tbi.daily$any.pento) <- '24h pentobarbital, y/n'
+label(tbi.daily$any.propofol) <- '24h propofol, y/n'
+label(tbi.daily$any.alpha2) <- '24h alpha-2 agonists (clonidine/dex)'
 
 ## -- Create analysis data sets including only ICU patients ----------------------------------------
 ## Patients with an ICU LOS of at least 1 day, admitted with blunt trauma
@@ -169,10 +193,11 @@ summaryM(age + gender + race + insurance.code + iss + cpr.yn + pt.marshall + pt.
 #### `r table_nums('descstats_daily')`
 ```{r printdescstatsdaily, results = 'markup'}
 summaryM(mental.status + max.motor.imp + pupil.react.imp + min.glucose.imp + min.hemoglobin.imp +
-           min.sodium.imp + max.icp.imp + max.icp.dich + sofa.nanormal.imp + tot.benzo +
-           tot.opioid + tot.propofol + tot.dex + tot.antipsyc + tot.betablock + tot.pento +
-           tot.clonid + any.plasmaplt + units.cryo + units.plasma + units.platelets + any.prbc +
-           units.prbc ~ 1,
+           min.sodium.imp + max.icp.imp + max.icp.dich + sofa.nanormal.imp + any.benzo + tot.benzo +
+           any.opioid + tot.opioid + any.propofol + tot.propofol + any.dex + tot.dex + any.clonid +
+           tot.clonid + any.alpha2 + any.antipsyc + tot.antipsyc + any.betablock + tot.betablock +
+           any.pento + tot.pento + any.plasmaplt + units.cryo + units.plasma + units.platelets +
+           any.prbc + units.prbc ~ 1,
          data = tbi.daily.icu)
 
 ```
@@ -407,7 +432,7 @@ daily.mort.org <- tbi.daily.icu %>%
   select(mrn, study.day, max.motor.imp, pupil.react.imp, min.glucose.imp, min.hemoglobin.imp,
          min.sodium.imp, mental.status, sofa.mod.nanormal.imp, max.icp.imp, max.icp.dich,
          tot.opioid.cube, tot.benzo.cube, tot.antipsyc.cube, tot.betablock.cube, tot.propofol.cube,
-         tot.dex.cube, tot.clonid.cube, units.prbc, any.plasmaplt)
+         tot.dex.cube, tot.clonid.cube, any.prbc, any.plasmaplt)
 
 ## Create beginning time-varying data set
 tv.mort.inhosp <- timevarying.data(idvar = 'mrn',
@@ -431,6 +456,47 @@ modeldata.mort.inhosp <- tv.mort.inhosp %>%
                                 levels = 1:3, labels = levels(tbi.daily$mental.status))) %>%
   ## Add on baseline variables
   left_join(base.mort.inhosp, ., by = 'mrn')
+
+```
+
+## In-Hospital Mortality
+```{r mortinhosp}
+# ## -- Imputation for in-hospital mortality ---------------------------------------------------------
+# areg.mort.inhosp <- aregImpute(~ age + gender + insurance.code + iss + cpr.yn + pt.marshall +
+#                                  pt.cerebral.na + hosp.death + I(max.motor.imp) + pupil.react.imp +
+#                                  min.glucose.imp + min.hemoglobin.imp + min.sodium.imp +
+#                                  mental.status + sofa.mod.nanormal.imp + max.icp.dich +
+#                                  tot.opioid.cube + tot.benzo.cube + tot.antipsyc.cube +
+#                                  tot.betablock.cube + tot.propofol.cube + tot.dex.cube +
+#                                  tot.clonid.cube + any.prbc + any.plasmaplt + start.day,
+#                                data = modeldata.mort.inhosp,
+#                                n.impute = 5, burnin = 3)
+# 
+# ## -- Fit model for in-hospital mortality ----------------------------------------------------------
+# Surv.mort.inhosp <- with(modeldata.mort.inhosp, Surv(time = start.day,
+#                                                      time2 = stop.day,
+#                                                      event = as.numeric(had.event)))
+# 
+# ## Original specification
+# mod.mort.inhosp <- fit.mult.impute(Surv.mort.inhosp ~ rcs(age, 4) + gender + insurance.code +
+#                                      rcs(iss, 4) + cpr.yn + pt.marshall + pt.cerebral.na +
+#                                      max.motor.imp + pupil.react.imp + rcs(min.glucose.imp, 4) +
+#                                      rcs(min.hemoglobin.imp, 4) + rcs(min.sodium.imp, 4) +
+#                                      mental.status + rcs(sofa.mod.nanormal.imp, 4) +
+#                                      max.icp.dich + rcs(tot.opioid.cube, 4) +
+#                                      rcs(tot.benzo.cube, 4) + tot.antipsyc.cube +
+#                                      rcs(tot.betablock.cube, 4) + tot.propofol.cube +
+#                                      tot.dex.cube + tot.clonid.cube +
+#                                      any.prbc + any.plasmaplt,
+#                                    fitter = cph,
+#                                    xtrans = areg.mort.inhosp,
+#                                    data = modeldata.mort.inhosp,
+#                                    x = TRUE, y = TRUE)
+# 
+# dd.mort.inhosp <- datadist(modeldata.mort.inhosp)
+# options(datadist = 'dd.mort.inhosp', width = 150)
+# summary(mod.mort.inhosp)
+
 
 ```
 
