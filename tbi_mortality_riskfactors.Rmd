@@ -45,6 +45,9 @@ library(rms)
 ## Source function for creating time-varying data sets for Cox models
 source('tbi_timevarying.R')
 
+## Source function for getting results from rms model fits
+source('/home/thomps23/R/rmsHelpers/model_results.R')
+
 ## Calculate what % (N) of records are missing in a given data set
 ## For a single variable: returns a vector with N, %, and formatted string including both
 missingVariable <- function(vname, df){
@@ -94,8 +97,9 @@ figure_nums(name = 'mort_inhosp_zph', 'Proportional Hazards Assumption')
 ## -- Load analysis data sets, additional data management ------------------------------------------
 load('AnalysisData/tbi_datasets.Rdata')
 
-## Shorten very long categories of CPR
-levels(tbi.oneobs$cpr.yn) <- c('Not Performed', 'Performed')
+## Shorten long categories of factor variables
+levels(tbi.oneobs$cpr.yn) <- c('No', 'Yes')
+levels(tbi.oneobs$pt.marshall) <- gsub('Marshall Class ', '', levels(tbi.oneobs$pt.marshall))
 
 ## New variable with some levels of discharge disposition combined d/t small N
 tbi.oneobs$disposition.comb <-
@@ -153,6 +157,9 @@ label(tbi.daily$any.opioid) <- '24h opioids, y/n'
 label(tbi.daily$any.pento) <- '24h pentobarbital, y/n'
 label(tbi.daily$any.propofol) <- '24h propofol, y/n'
 label(tbi.daily$any.alpha2) <- '24h alpha-2 agonists (clonidine/dex)'
+
+## Shorten factor levels
+levels(tbi.daily$max.icp.dich) <- c('Normal', 'Abnormal')
 
 ## -- Create analysis data sets including only ICU patients ----------------------------------------
 ## Patients with an ICU LOS of at least 1 day, admitted with blunt trauma
@@ -537,6 +544,20 @@ modeldata.mort.inhosp <- tv.mort.inhosp %>%
   ## Add on baseline variables
   left_join(base.mort.inhosp, ., by = 'mrn')
 
+## For some reason, labels for some variables are not preserved. Add them again. Sigh.
+label(modeldata.mort.inhosp$max.motor.imp) <- label(tbi.daily$max.motor.imp)
+label(modeldata.mort.inhosp$pupil.react.imp) <- label(tbi.daily$pupil.react.imp)
+label(modeldata.mort.inhosp$min.glucose.imp) <- label(tbi.daily$min.glucose.imp)
+label(modeldata.mort.inhosp$min.hemoglobin.imp) <- label(tbi.daily$min.hemoglobin.imp)
+label(modeldata.mort.inhosp$min.sodium.imp) <- label(tbi.daily$min.sodium.imp)
+label(modeldata.mort.inhosp$mental.status) <- label(tbi.daily$mental.status)
+label(modeldata.mort.inhosp$max.icp.dich) <- label(tbi.daily$max.icp.dich)
+label(modeldata.mort.inhosp$any.dex) <- label(tbi.daily$any.dex)
+label(modeldata.mort.inhosp$any.prbc) <- label(tbi.daily$any.prbc)
+label(modeldata.mort.inhosp$any.plasmaplt) <- label(tbi.daily$any.plasmaplt)
+## Shorten super long label for modified SOFA
+label(modeldata.mort.inhosp$sofa.mod.nanormal.imp) <- 'Modified SOFA (missing component = 0)'
+
 ```
 
 ```{r mort_inhosp_fitmod}
@@ -594,6 +615,19 @@ par(mfrow = c(1, 1))
 
 ```
 
+### Model Results
+```{r mort_inhosp_results}
+dd.inhosp <- datadist(modeldata.mort.inhosp, adjto.cat = 'first')
+options(datadist = 'dd.inhosp')
+results.mort.inhosp <- model.results(mod.mort.inhosp,
+                                     data.set = modeldata.mort.inhosp,
+                                     print.format = 'plain')
+
+```
+
+```{r print_mort_inhosp_results, results = 'asis'}
+pandoc.table(results.mort.inhosp, justify = 'lrrrrrr', style = 'rmarkdown', split.tables = 800)
+```
 
 # Software Details
 `r devtools::session_info()$platform$version` was used for all analyses. `r table_nums('package_info', display = 'cite')` shows all add-on packages loaded.
