@@ -41,8 +41,32 @@ library(tidyverse)
 library(pander)
 library(rms)
 
+## -- Functions for general use --------------------------------------------------------------------
 ## Source function for creating time-varying data sets for Cox models
 source('tbi_timevarying.R')
+
+## Calculate what % (N) of records are missing in a given data set
+## For a single variable: returns a vector with N, %, and formatted string including both
+missingVariable <- function(vname, df){
+  nmiss <- sum(is.na(df[,vname]))
+  pctmiss <- (nmiss / nrow(df))*100
+  pctmiss <- ifelse(pctmiss < 1 & nmiss > 0, round(pctmiss, 2), round(pctmiss, 0))
+  
+  c('nmiss' = nmiss,
+    'pctmiss' = pctmiss,
+    '% (N)' = paste0(pctmiss, '% (', format(nmiss, big.mark = ','), ')'))
+}
+
+## For a data frame: returns a data frame with variable name, N, %, and formatted strings
+missingInDataFrame <- function(df, ## data frame for which to get missingness
+                               ignore.vars = c('mrn', 'event', 'study.day')){
+                               ## ignore these variables (typically, ID and time variables)
+  as.data.frame(do.call(rbind,
+                        lapply(setdiff(names(df), ignore.vars), FUN = function(vname){
+                          c(vname, missingVariable(vname, df))
+                        })))
+}
+
 
 ## -- Set up figure, table numbering using the captioner package -----------------------------------
 table_nums <- captioner(prefix = 'Table')
@@ -433,7 +457,7 @@ daily.mort.org <- tbi.daily.icu %>%
   select(mrn, study.day, max.motor.imp, pupil.react.imp, min.glucose.imp, min.hemoglobin.imp,
          min.sodium.imp, mental.status, sofa.mod.nanormal.imp, max.icp.imp, max.icp.dich,
          tot.opioid.cube, tot.benzo.cube, tot.antipsyc.cube, tot.betablock.cube, tot.propofol.cube,
-         any.alpha2, any.dex, tot.clonid.cube, any.prbc, any.plasmaplt)
+         any.dex, tot.clonid.cube, any.prbc, any.plasmaplt)
 
 ## Create beginning time-varying data set
 tv.mort.inhosp <- timevarying.data(idvar = 'mrn',
