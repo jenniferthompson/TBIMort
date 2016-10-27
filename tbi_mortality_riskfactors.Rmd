@@ -40,13 +40,15 @@ library(captioner)
 library(tidyverse)
 library(pander)
 library(rms)
+library(plotly)
 
 ## -- Functions for general use --------------------------------------------------------------------
 ## Source function for creating time-varying data sets for Cox models
 source('tbi_timevarying.R')
 
-## Source function for getting results from rms model fits
+## Source functions for getting results from rms model fits
 source('/home/thomps23/R/rmsHelpers/model_results.R')
+source('/home/thomps23/R/rmsHelpers/calc_comparisons_rms.R')
 
 ## Column headers for model.results() tables for different kinds of model fits
 cph.results.headers <-
@@ -98,6 +100,7 @@ figure_nums <- captioner(prefix = 'Figure')
 figure_nums(name = 'dailydrughist',
             caption = 'Daily Drug Doses and Blood Product among Analysis Cohort')
 figure_nums(name = 'mort_inhosp_zph', 'Proportional Hazards Assumption')
+figure_nums(name = 'mort_inhosp_figures', 'Hazard Ratios and 95% CIs, In-Hospital Mortality')
 
 ## -- Load analysis data sets, additional data management ------------------------------------------
 load('AnalysisData/tbi_datasets.Rdata')
@@ -291,7 +294,7 @@ daily.drugs.summary <- daily.drugs %>%
 To guide our choice of covariates in models with time-varying covariates, we plotted histograms and detailed summary statistics for all drug doses and blood products given on a daily basis (`r figure_nums('dailydrughist', display = 'cite')`).
 
 #### `r figure_nums('dailydrughist')`
-```{r print_exploratory, results = 'asis', fig.width=7, fig.height = 10}
+```{r print_exploratory, results = 'asis', fig.width=7, fig.height=10}
 ggplot(data = daily.drugs, aes(x = amount)) +
   facet_wrap(~ drug.or.product, ncol = 2, scales = 'free_x') +
   geom_histogram() +
@@ -624,7 +627,7 @@ par(mfrow = c(1, 1))
 `r table_nums('mort_inhosp_results', display = 'cite')` presents a summary of results from the
 in-hospital mortality model. Hazard ratios indicate a comparison between the "comparison" vs the "reference" columns, holding all other covariates at the median or reference category. For example,
 a patient who was `r round(dd.inhosp$limits$age[3])` years old at the time of injury has about `r round(summary(mod.mort.inhosp, age = c(dd.inhosp$limits$age[1], dd.inhosp$limits$age[3]), est.all = FALSE)[2, 'Effect'], 1)` times the hazard of in-hospital death at any time point compared to a patient who was `r round(dd.inhosp$limits$age[1])` years old, assuming all other covariates are equal. **Please note** that while p-values reflect the entire association of each covariate with our
-outcome, hazard ratios are only valid for the comparisons listed: For continuous covariates which are allowed to have a nonlinear association with mortality, the hazard ratios depend on the two values we choose; for categorical covariates with more than two categories, the hazard ratios depend on the reference level chosen. More details will be shown in figures below.
+outcome, hazard ratios are only valid for the comparisons listed: For continuous covariates which are allowed to have a nonlinear association with mortality, the hazard ratios depend on the two values we choose; for categorical covariates with more than two categories, the hazard ratios depend on the reference level chosen. More detailed hazard ratios are displayed in `r figure_nums('mort_inhosp_figures', display = 'cite')`.
 
 #### `r table_nums('mort_inhosp_results')`
 ```{r mort_inhosp_results}
@@ -639,6 +642,33 @@ names(results.mort.inhosp) <- cph.results.headers
 
 ```{r print_mort_inhosp_results, results = 'asis'}
 pandoc.table(results.mort.inhosp, justify = 'lrrrrrr', style = 'rmarkdown', split.tables = 800)
+```
+
+#### `r figure_nums('mort_inhosp_figures')`
+```{r mort_inhosp_figures, results = 'asis', fig.width=10, fig.height=15}
+## -- Get data frame of all HRs for all covariates -------------------------------------------------
+## Get all unique variables used in model fit
+vars.mort.inhosp <- unique(gsub("'+|=.+$", "", names(mod.mort.inhosp$coefficients)))
+
+hrs.mort.inhosp <- bind_rows(lapply(vars.mort.inhosp,
+                                    FUN = calcComparisonsRMS,
+                                    model.obj = mod.mort.inhosp,
+                                    get.ratios = TRUE,
+                                    data.set = modeldata.mort.inhosp))
+
+gg.mort.inhosp <- ggplot(data = hrs.mort.inhosp, aes(x = comp, y = effect)) +
+  facet_wrap(~ variable, ncol = 3, scales = 'free_x') +
+  geom_hline(yintercept = 1, colour = 'grey80', size = 1.5) +
+  geom_pointrange(aes(ymin = lcl, ymax = ucl), colour = '#003D74') +
+  scale_x_continuous(name = '') +
+  scale_y_continuous(name = 'Hazard Ratio (95% Confidence Interval)',
+                     breaks = c(0, 0.25, 0.5, 1, 1.5, 2, 4, 8, 16)) +
+  # scale_shape(guide = FALSE) +
+  # scale_y_continuous(trans = 'log', breaks = c(0, 0.25, 0.5, 1, 2, 4, 8, 16, 32)) +
+  theme_bw()
+
+ggplotly(gg.mort.inhosp)
+
 ```
 
 # Software Details
