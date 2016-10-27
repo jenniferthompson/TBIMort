@@ -48,6 +48,10 @@ source('tbi_timevarying.R')
 ## Source function for getting results from rms model fits
 source('/home/thomps23/R/rmsHelpers/model_results.R')
 
+## Column headers for model.results() tables for different kinds of model fits
+cph.results.headers <-
+  c('Covariate', 'Reference', 'Comparison', 'HR (95% CI)', 'Chi-square', 'df', 'P')
+
 ## Calculate what % (N) of records are missing in a given data set
 ## For a single variable: returns a vector with N, %, and formatted string including both
 missingVariable <- function(vname, df){
@@ -86,6 +90,7 @@ table_nums(name = 'mort_inhosp_missing_baseline',
            caption = 'Patients Excluded from In-Hospital Mortality Model due to Missing Baseline Data')
 table_nums(name = 'mort_inhosp_missing_daily',
            caption = 'Patient-Days Requiring Imputation for In-Hospital Mortality Model')
+table_nums(name = 'mort_inhosp_results', caption = 'Model Results Summary, In-Hospital Mortality')
 
 table_nums(name = 'package_info', caption = 'R Packages Loaded')
 
@@ -556,7 +561,7 @@ label(modeldata.mort.inhosp$any.dex) <- label(tbi.daily$any.dex)
 label(modeldata.mort.inhosp$any.prbc) <- label(tbi.daily$any.prbc)
 label(modeldata.mort.inhosp$any.plasmaplt) <- label(tbi.daily$any.plasmaplt)
 ## Shorten super long label for modified SOFA
-label(modeldata.mort.inhosp$sofa.mod.nanormal.imp) <- 'Modified SOFA (missing component = 0)'
+label(modeldata.mort.inhosp$sofa.mod.nanormal.imp) <- 'Modified SOFA (missing comp. = 0)'
 
 ```
 
@@ -616,12 +621,19 @@ par(mfrow = c(1, 1))
 ```
 
 ### Model Results
+`r table_nums('mort_inhosp_results', display = 'cite')` presents a summary of results from the
+in-hospital mortality model. Hazard ratios indicate a comparison between the "comparison" vs the "reference" columns, holding all other covariates at the median or reference category. For example,
+a patient who was `r round(dd.inhosp$limits$age[3])` years old at the time of injury has about `r round(summary(mod.mort.inhosp, age = c(dd.inhosp$limits$age[1], dd.inhosp$limits$age[3]), est.all = FALSE)[2, 'Effect'], 1)` times the hazard of in-hospital death at any time point compared to a patient who was `r round(dd.inhosp$limits$age[1])` years old, assuming all other covariates are equal. **Please note** that while p-values reflect the entire association of each covariate with our
+outcome, hazard ratios are only valid for the comparisons listed: For continuous covariates which are allowed to have a nonlinear association with mortality, the hazard ratios depend on the two values we choose; for categorical covariates with more than two categories, the hazard ratios depend on the reference level chosen. More details will be shown in figures below.
+
+#### `r table_nums('mort_inhosp_results')`
 ```{r mort_inhosp_results}
 dd.inhosp <- datadist(modeldata.mort.inhosp, adjto.cat = 'first')
 options(datadist = 'dd.inhosp')
 results.mort.inhosp <- model.results(mod.mort.inhosp,
                                      data.set = modeldata.mort.inhosp,
                                      print.format = 'plain')
+names(results.mort.inhosp) <- cph.results.headers
 
 ```
 
