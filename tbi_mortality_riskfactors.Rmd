@@ -649,7 +649,12 @@ pandoc.table(results.mort.inhosp, justify = 'lrrrrrr', style = 'rmarkdown', spli
 ```
 
 #### `r figure_nums('mort_inhosp_figures')`
-```{r mort_inhosp_figures, results = 'asis', fig.width=10, fig.height=50}
+For numeric variables, all hazard ratios are for comparison to the median, our best "typical" value;
+comparison values are the 10th, 25th, 75th, and 90th percentiles by default, though in some cases
+(drug doses, for example), some of these percentiles are the same. For categorical variables, the
+reference level is the lefthand level.
+
+```{r mort_inhosp_figures}
 ## -- Get data frame of all HRs for all covariates -------------------------------------------------
 ## Get all unique variables used in model fit
 vars.mort.inhosp <- unique(gsub("'+|=.+$", "", names(mod.mort.inhosp$coefficients)))
@@ -660,34 +665,67 @@ hrs.mort.inhosp <- bind_rows(lapply(vars.mort.inhosp,
                                     get.ratios = TRUE,
                                     data.set = modeldata.mort.inhosp))
 
-## Work on factor levels
-hrs.mort.inhosp.flevels <- unique(subset(hrs.mort.inhosp, select = c(comp.c, is.ref))) %>%
+## -- Add variable *labels* ------------------------------------------------------------------------
+hrs.mort.inhosp.labels <- as.data.frame(do.call(rbind,
+                                                lapply(vars.mort.inhosp, FUN = function(v){
+                                                  c('variable' = v,
+                                                    'varlabel' = label(modeldata.mort.inhosp[,v]))
+                                                })))
+hrs.mort.inhosp <- hrs.mort.inhosp %>%
+  left_join(hrs.mort.inhosp.labels, by = 'variable') %>%
+  left_join(select(results.mort.inhosp, Covariate, P),
+            by = c("varlabel" = "Covariate"))
+
+## -- Create properly ordered factor levels --------------------------------------------------------
+hrs.mort.inhosp.flevels <-
+  ## Get all unique factor levels + whether they are reference
+  unique(subset(hrs.mort.inhosp, select = c(comp.c, is.ref))) %>%
+  ## Create variables by which to order: numeric/NA, then for character, whether reference
+  ## (numeric levels will always be ordered by numeric value, regardless of reference)
   mutate(level.num = as.numeric(as.character(comp.c)),
          is.ref.factor = ifelse(!is.na(level.num), FALSE, is.ref)) %>%
+  ## Only need original, new reference indicator, and numeric
   select(comp.c, is.ref.factor, level.num) %>%
+  ## Take only unique: no need for multiple 0 levels, for example
   unique() %>%
+  ## Sort all possible levels by 1. numeric values in order, 2. all reference levels,
+  ## 3. all other character levels
   arrange(level.num, desc(is.ref.factor)) %>%
+  ## Give each unique value a numeric value
   mutate(flevel.num = 1:nrow(.))
 
+## Merge numeric values onto original data set, create final factor variable
 hrs.mort.inhosp <- hrs.mort.inhosp %>%
   left_join(select(hrs.mort.inhosp.flevels, comp.c, flevel.num),
             by = c('comp.c')) %>%
   mutate(flevel = factor(flevel.num, labels = hrs.mort.inhosp.flevels$comp.c))
 
+## -- Create a single faceted plot for all covariate HRs vs reference levels -----------------------
+## Change column names to work better in tooltips
+names(hrs.mort.inhosp) <- gsub('flevel', 'Comparison', names(hrs.mort.inhosp))
+names(hrs.mort.inhosp) <- gsub('lcl', 'Lower.CL', names(hrs.mort.inhosp))
+names(hrs.mort.inhosp) <- gsub('ucl', 'Upper.CL', names(hrs.mort.inhosp))
+names(hrs.mort.inhosp) <- gsub('effect', 'HR', names(hrs.mort.inhosp))
+names(hrs.mort.inhosp) <- gsub('ref.c', 'Reference', names(hrs.mort.inhosp))
+
 gg.mort.inhosp <- ggplot(data = hrs.mort.inhosp,
-                         aes(x = flevel, label = ref.c, y = effect)) +
-  facet_wrap(~ variable, ncol = 1, scales = 'free') +
-  geom_hline(yintercept = 1, colour = 'grey80', size = 1.25) +
-  geom_pointrange(aes(ymin = lcl, ymax = ucl, colour = abs(log(effect)))) +
+                         aes(x = Comparison, fill = P, label = Reference, y = HR)) +
+  facet_wrap(~ varlabel, ncol = 1, scales = 'free') +
+  geom_hline(yintercept = 1, colour = 'grey90', size = 1.25) +
+  geom_pointrange(aes(ymin = Lower.CL, ymax = Upper.CL, colour = abs(log(HR)))) +
   scale_color_viridis(direction = -1, end = 0.9, name = 'Effect Size<br>(Log Scale)') +
   scale_x_discrete(name = '') +
-  scale_y_continuous(name = 'Hazard Ratios (95% Confidence Intervals), In-Hospital Mortality<br> ',
+  scale_y_continuous(name = ' <br>Hazard Ratios (95% Confidence Intervals), In-Hospital Mortality<br> ',
                      breaks = c(0.25, 0.5, 1, 1.25, 1.5, 2, 4, 8, 16)) +
+  guides(fill = FALSE) +
   theme_bw() +
   theme(axis.text = element_text(size = 8))
 
+```
+
+```{r print_mort_inhosp_figures, results = 'asis', fig.width=12, fig.height=75}
 gg.mort.inhosp %>%
-  ggplotly(tooltip = c("x", "label", "y", "ymin", "ymax"))
+  ggplotly(tooltip = c("x", "label", "y", "ymin", "ymax", "fill"))
 
 ```
 
