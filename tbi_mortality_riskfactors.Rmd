@@ -660,8 +660,22 @@ hrs.mort.inhosp <- bind_rows(lapply(vars.mort.inhosp,
                                     get.ratios = TRUE,
                                     data.set = modeldata.mort.inhosp))
 
+## Work on factor levels
+hrs.mort.inhosp.flevels <- unique(subset(hrs.mort.inhosp, select = c(comp.c, is.ref))) %>%
+  mutate(level.num = as.numeric(as.character(comp.c)),
+         is.ref.factor = ifelse(!is.na(level.num), FALSE, is.ref)) %>%
+  select(comp.c, is.ref.factor, level.num) %>%
+  unique() %>%
+  arrange(level.num, desc(is.ref.factor)) %>%
+  mutate(flevel.num = 1:nrow(.))
+
+hrs.mort.inhosp <- hrs.mort.inhosp %>%
+  left_join(select(hrs.mort.inhosp.flevels, comp.c, flevel.num),
+            by = c('comp.c')) %>%
+  mutate(flevel = factor(flevel.num, labels = hrs.mort.inhosp.flevels$comp.c))
+
 gg.mort.inhosp <- ggplot(data = hrs.mort.inhosp,
-                         aes(x = comp.c, label = ref.c, y = effect)) +
+                         aes(x = flevel, label = ref.c, y = effect)) +
   facet_wrap(~ variable, ncol = 1, scales = 'free') +
   geom_hline(yintercept = 1, colour = 'grey80', size = 1.25) +
   geom_pointrange(aes(ymin = lcl, ymax = ucl, colour = abs(log(effect)))) +
