@@ -41,8 +41,12 @@ library(tidyverse)
 library(pander)
 library(rms)
 library(plotly)
+library(viridis)
 
 ## -- Functions for general use --------------------------------------------------------------------
+## For combining multiple plots
+source('/home/thomps23/R/multiplot.r')
+
 ## Source function for creating time-varying data sets for Cox models
 source('tbi_timevarying.R')
 
@@ -645,7 +649,7 @@ pandoc.table(results.mort.inhosp, justify = 'lrrrrrr', style = 'rmarkdown', spli
 ```
 
 #### `r figure_nums('mort_inhosp_figures')`
-```{r mort_inhosp_figures, results = 'asis', fig.width=10, fig.height=15}
+```{r mort_inhosp_figures, results = 'asis', fig.width=10, fig.height=50}
 ## -- Get data frame of all HRs for all covariates -------------------------------------------------
 ## Get all unique variables used in model fit
 vars.mort.inhosp <- unique(gsub("'+|=.+$", "", names(mod.mort.inhosp$coefficients)))
@@ -656,18 +660,20 @@ hrs.mort.inhosp <- bind_rows(lapply(vars.mort.inhosp,
                                     get.ratios = TRUE,
                                     data.set = modeldata.mort.inhosp))
 
-gg.mort.inhosp <- ggplot(data = hrs.mort.inhosp, aes(x = comp, y = effect)) +
-  facet_wrap(~ variable, ncol = 3, scales = 'free_x') +
-  geom_hline(yintercept = 1, colour = 'grey80', size = 1.5) +
-  geom_pointrange(aes(ymin = lcl, ymax = ucl), colour = '#003D74') +
-  scale_x_continuous(name = '') +
-  scale_y_continuous(name = 'Hazard Ratio (95% Confidence Interval)',
-                     breaks = c(0, 0.25, 0.5, 1, 1.5, 2, 4, 8, 16)) +
-  # scale_shape(guide = FALSE) +
-  # scale_y_continuous(trans = 'log', breaks = c(0, 0.25, 0.5, 1, 2, 4, 8, 16, 32)) +
-  theme_bw()
+gg.mort.inhosp <- ggplot(data = hrs.mort.inhosp,
+                         aes(x = comp.c, label = ref.c, y = effect)) +
+  facet_wrap(~ variable, ncol = 1, scales = 'free') +
+  geom_hline(yintercept = 1, colour = 'grey80', size = 1.25) +
+  geom_pointrange(aes(ymin = lcl, ymax = ucl, colour = abs(log(effect)))) +
+  scale_color_viridis(direction = -1, end = 0.9, name = 'Effect Size<br>(Log Scale)') +
+  scale_x_discrete(name = '') +
+  scale_y_continuous(name = 'Hazard Ratios (95% Confidence Intervals), In-Hospital Mortality<br> ',
+                     breaks = c(0.25, 0.5, 1, 1.25, 1.5, 2, 4, 8, 16)) +
+  theme_bw() +
+  theme(axis.text = element_text(size = 8))
 
-ggplotly(gg.mort.inhosp)
+gg.mort.inhosp %>%
+  ggplotly(tooltip = c("x", "label", "y", "ymin", "ymax"))
 
 ```
 
