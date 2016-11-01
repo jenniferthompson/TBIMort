@@ -636,11 +636,10 @@ mod.mort.inhosp <- fit.mult.impute(Surv.mort.inhosp ~ rcs(age, 4) + gender + ins
 ```
 
 ### Model Assumptions
-`r figure_nums('mort_inhosp_zph', display = 'cite')` graphically examines the proportional hazards
-assumption (that beta(t) is roughly constant over time; in other words, we want to see flat lines).
 
-#### `r figure_nums('mort_inhosp_zph')`
-```{r mort_inhosp_checkph, results='asis'}
+We checked the proportional hazards assumption graphically, looking at the time-dependent coefficient (beta(t)) over time for each model coefficient (code can be shown below).
+
+```{r mort_inhosp_checkph, results='hide'}
 ## -- Check proportional hazard assumption ---------------------------------------------------------
 zph.mort.inhosp <- cox.zph(mod.mort.inhosp, transform = 'log')
 
@@ -648,7 +647,17 @@ par(mfrow = c(1, 2))
 plot(zph.mort.inhosp, col = 'red', lwd = 2)
 par(mfrow = c(1, 1))
 
+## Text for when figure is included:
+# `r figure_nums('mort_inhosp_zph', display = 'cite')` graphically examines the proportional hazards
+# assumption (that beta(t) is roughly constant over time; in other words, we want to see flat lines).
+# 
+# #### `r figure_nums('mort_inhosp_zph')`
+
 ```
+
+We do not show the figures here to conserve space, but the proportional hazards
+assumption was generally satisfied, though it did get understandably wobbly when data was very
+sparse (longest followup times).
 
 ### Model Results
 `r table_nums('mort_inhosp_results', display = 'cite')` presents a summary of results from the
