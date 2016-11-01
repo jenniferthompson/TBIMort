@@ -572,6 +572,29 @@ label(modeldata.mort.inhosp$sofa.mod.nanormal.imp) <- 'Modified SOFA (missing co
 
 ```
 
+### Redundancy Analysis
+To see if any of the covariates in our in-hospital mortality model are nearly fully explained by the
+others, we performed a redundancy analysis. Adjusted R^2^ values for each covariate are shown below.
+
+```{r mort_inhosp_redun, results = 'markup'}
+redun.mort.inhosp <- redun(~ age + gender + insurance.code + iss + cpr.yn + pt.marshall +
+                             pt.cerebral.na + I(max.motor.imp) + pupil.react.imp + min.glucose.imp +
+                             min.hemoglobin.imp + min.sodium.imp + mental.status +
+                             sofa.mod.nanormal.imp + max.icp.dich + tot.opioid.cube +
+                             tot.benzo.cube + I(tot.antipsyc.cube) + tot.betablock.cube +
+                             I(tot.propofol.cube) + any.dex + I(tot.clonid.cube) + any.prbc +
+                             any.plasmaplt,
+                           data = modeldata.mort.inhosp, type = 'adjusted', nk = 4, allcat = TRUE)
+
+highr2.mort.inhosp <- which.max(redun.mort.inhosp$rsq1)
+
+round(redun.mort.inhosp$rsq1, 2)
+
+```
+
+The highest adjusted R^2^ value is `r round(redun.mort.inhosp$rsq1[highr2.mort.inhosp], 2)` (`r names(redun.mort.inhosp$rsq1[highr2.mort.inhosp])`), indicating that there are no redundant
+variables. All covariates will be included as specified above.
+
 ```{r mort_inhosp_fitmod}
 ## -- Imputation for in-hospital mortality ---------------------------------------------------------
 set.seed(56)
@@ -619,7 +642,7 @@ assumption (that beta(t) is roughly constant over time; in other words, we want 
 #### `r figure_nums('mort_inhosp_zph')`
 ```{r mort_inhosp_checkph, results='asis'}
 ## -- Check proportional hazard assumption ---------------------------------------------------------
-zph.mort.inhosp <- cox.zph(mod.mort.inhosp, transform = 'rank')
+zph.mort.inhosp <- cox.zph(mod.mort.inhosp, transform = 'log')
 
 par(mfrow = c(1, 2))
 plot(zph.mort.inhosp, col = 'red', lwd = 2)
@@ -630,7 +653,9 @@ par(mfrow = c(1, 1))
 ### Model Results
 `r table_nums('mort_inhosp_results', display = 'cite')` presents a summary of results from the
 in-hospital mortality model. Hazard ratios indicate a comparison between the "comparison" vs the "reference" columns, holding all other covariates at the median or reference category. For example,
-a patient who was `r round(dd.inhosp$limits$age[3])` years old at the time of injury has about `r round(summary(mod.mort.inhosp, age = c(dd.inhosp$limits$age[1], dd.inhosp$limits$age[3]), est.all = FALSE)[2, 'Effect'], 1)` times the hazard of in-hospital death at any time point compared to a patient who was `r round(dd.inhosp$limits$age[1])` years old, assuming all other covariates are equal. **Please note** that while p-values reflect the entire association of each covariate with our
+a patient who was `r round(dd.inhosp$limits$age[3])` years old at the time of injury has about `r round(summary(mod.mort.inhosp, age = c(dd.inhosp$limits$age[1], dd.inhosp$limits$age[3]), est.all = FALSE)[2, 'Effect'], 1)` times the hazard of in-hospital death at any time point compared to a patient who was `r round(dd.inhosp$limits$age[1])` years old, assuming all other covariates are equal. Where possible, the reference and comparison values for continuous variables are the 25th and 75th percentiles, respectively; for variables where these quantities are the same (eg, several drug doses), these values are the minimum and maximum.
+
+**Please note** that while p-values reflect the entire association of each covariate with our
 outcome, hazard ratios are only valid for the comparisons listed: For continuous covariates which are allowed to have a nonlinear association with mortality, the hazard ratios depend on the two values we choose; for categorical covariates with more than two categories, the hazard ratios depend on the reference level chosen. More detailed hazard ratios are displayed in `r figure_nums('mort_inhosp_figures', display = 'cite')`.
 
 #### `r table_nums('mort_inhosp_results')`
@@ -698,7 +723,8 @@ hrs.mort.inhosp.flevels <-
 hrs.mort.inhosp <- hrs.mort.inhosp %>%
   left_join(select(hrs.mort.inhosp.flevels, comp.c, flevel.num),
             by = c('comp.c')) %>%
-  mutate(flevel = factor(flevel.num, labels = hrs.mort.inhosp.flevels$comp.c))
+  mutate(flevel = factor(flevel.num, labels = hrs.mort.inhosp.flevels$comp.c),
+         varlabel.p = paste0(varlabel, '; P: ', P))
 
 ## -- Create a single faceted plot for all covariate HRs vs reference levels -----------------------
 ## Change column names to work better in tooltips
@@ -709,8 +735,8 @@ names(hrs.mort.inhosp) <- gsub('effect', 'HR', names(hrs.mort.inhosp))
 names(hrs.mort.inhosp) <- gsub('ref.c', 'Reference', names(hrs.mort.inhosp))
 
 gg.mort.inhosp <- ggplot(data = hrs.mort.inhosp,
-                         aes(x = Comparison, fill = P, label = Reference, y = HR)) +
-  facet_wrap(~ varlabel, ncol = 1, scales = 'free') +
+                         aes(x = Comparison, label = Reference, y = HR)) +
+  facet_wrap(~ varlabel.p, ncol = 1, scales = 'free') +
   geom_hline(yintercept = 1, colour = 'grey90', size = 1.25) +
   geom_pointrange(aes(ymin = Lower.CL, ymax = Upper.CL, colour = abs(log(HR)))) +
   scale_color_viridis(direction = -1, end = 0.9, name = 'Effect Size<br>(Log Scale)') +
@@ -725,7 +751,7 @@ gg.mort.inhosp <- ggplot(data = hrs.mort.inhosp,
 
 ```{r print_mort_inhosp_figures, results = 'asis', fig.width=12, fig.height=75}
 gg.mort.inhosp %>%
-  ggplotly(tooltip = c("x", "label", "y", "ymin", "ymax", "fill"))
+  ggplotly(tooltip = c("x", "label", "y", "ymin", "ymax"))
 
 ```
 
