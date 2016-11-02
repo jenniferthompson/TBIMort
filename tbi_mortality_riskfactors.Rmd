@@ -990,6 +990,29 @@ par(mfrow = c(1, 1))
 
 ```
 
+### Model Results
+`r table_nums('mort_3yr_results', display = 'cite')` presents a summary of results from the
+three-year mortality model. Hazard ratios indicate a comparison between the "comparison" vs the "reference" columns, holding all other covariates at the median or reference category. For example,
+a patient who was `r round(dd.3yr$limits$age[3])` years old at the time of injury has about `r round(summary(mod.mort.3yr, age = c(dd.3yr$limits$age[1], dd.3yr$limits$age[3]), est.all = FALSE)[2, 'Effect'], 1)` times the hazard of death at any time point during the three years after admission compared to a patient who was `r round(dd.3yr$limits$age[1])` years old, assuming all other covariates are equal. Where possible, the reference and comparison values for continuous variables are the 25th and 75th percentiles, respectively; for variables where these quantities are the same (eg, several drug doses), these values are the minimum and maximum.
+
+**Please note** that while p-values reflect the entire association of each covariate with our
+outcome, hazard ratios are only valid for the comparisons listed: For continuous covariates which are allowed to have a nonlinear association with mortality, the hazard ratios depend on the two values we choose; for categorical covariates with more than two categories, the hazard ratios depend on the reference level chosen. More detailed hazard ratios are displayed in `r figure_nums('mort_3yr_figures', display = 'cite')`.
+
+#### `r table_nums('mort_3yr_results')`
+```{r mort_3yr_results}
+dd.3yr <- datadist(modeldata.mort.3yr, adjto.cat = 'first')
+options(datadist = 'dd.3yr')
+results.mort.3yr <- model.results(mod.mort.3yr,
+                                  data.set = modeldata.mort.3yr,
+                                  print.format = 'plain')
+names(results.mort.3yr) <- cph.results.headers
+
+```
+
+```{r print_mort_3yr_results, results = 'asis'}
+pandoc.table(results.mort.3yr, justify = 'lrrrrrr', style = 'rmarkdown', split.tables = 800)
+```
+
 # Software Details
 `r devtools::session_info()$platform$version` was used for all analyses. `r table_nums('package_info', display = 'cite')` shows all add-on packages loaded.
 
