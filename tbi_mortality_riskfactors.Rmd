@@ -108,8 +108,10 @@ table_nums(name = 'package_info', caption = 'R Packages Loaded')
 figure_nums <- captioner(prefix = 'Figure')
 figure_nums(name = 'dailydrughist',
             caption = 'Daily Drug Doses and Blood Product among Analysis Cohort')
-figure_nums(name = 'mort_inhosp_zph', 'Proportional Hazards Assumption')
+figure_nums(name = 'mort_inhosp_zph', 'Proportional Hazards Assumption, In-Hospital Mortality')
 figure_nums(name = 'mort_inhosp_figures', 'Hazard Ratios and 95% CIs, In-Hospital Mortality')
+figure_nums(name = 'mort_3yr_zph', 'Proportional Hazards Assumption, Three-Year Mortality')
+figure_nums(name = 'mort_3yr_figures', 'Hazard Ratios and 95% CIs, Three-Year Mortality')
 
 ## -- Load analysis data sets, additional data management ------------------------------------------
 load('AnalysisData/tbi_datasets.Rdata')
@@ -655,6 +657,7 @@ zph.mort.inhosp <- cox.zph(mod.mort.inhosp, transform = 'log')
 
 par(mfrow = c(1, 2))
 plot(zph.mort.inhosp, col = 'red', lwd = 2)
+abline(v = 0, lty = 2, col = 'gray')
 par(mfrow = c(1, 1))
 
 ## Text for when figure is included:
@@ -965,6 +968,26 @@ mod.mort.3yr <- fit.mult.impute(Surv.mort.3yr ~ rcs(age, 4) + gender + insurance
                                 xtrans = areg.mort.3yr,
                                 data = modeldata.mort.3yr,
                                 x = TRUE, y = TRUE)
+
+```
+
+### Model Assumptions
+
+We checked the proportional hazards assumption graphically, looking at the time-dependent coefficient (beta(t)) over time for each model coefficient (code can be shown below).
+
+`r figure_nums('mort_3yr_zph', display = 'cite')` graphically examines the proportional hazards
+assumption (that beta(t) is roughly constant over time; in other words, we want to see flat lines).
+
+#### `r figure_nums('mort_3yr_zph')`
+```{r mort_3yr_checkph, results='asis'}
+## -- Check proportional hazard assumption ---------------------------------------------------------
+zph.mort.3yr <- cox.zph(mod.mort.3yr, transform = 'log')
+
+par(mfrow = c(1, 2))
+plot(zph.mort.3yr, col = 'red', lwd = 2)
+par(mfrow = c(1, 1))
+
+## Text for when figure is included:
 
 ```
 
