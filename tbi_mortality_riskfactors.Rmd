@@ -123,20 +123,19 @@ levels(tbi.oneobs$pt.marshall) <- gsub('Marshall Class ', '', levels(tbi.oneobs$
 ## New variable with some levels of discharge disposition combined d/t small N
 tbi.oneobs$disposition.comb <-
   with(tbi.oneobs, factor(ifelse(disposition.coded == 'Death in hospital', NA,
-                          ifelse(disposition.coded %in% c('Discharged home', 'Psych unit'), 1,
-                          ifelse(disposition.coded == 'Hospice', 2,
-                          ifelse(disposition.coded == 'Inpatient rehab', 3,
-                          ifelse(disposition.coded == 'Jail or prison', 4,
+                          ifelse(disposition.coded %in% c('Discharged home',
+                                                          'Psych unit',
+                                                          'Jail or prison'), 1,
+                          ifelse(disposition.coded == 'Inpatient rehab', 2,
                           ifelse(disposition.coded %in%
                                    c('LTAC',
                                      'Nursing care (including SNF and nursing home)',
-                                     'Transfer to other hospital'), 5, NA)))))),
-                          levels = 1:5,
-                          labels = c('Discharged home or psych',
-                                     'Hospice',
+                                     'Transfer to other hospital',
+                                     'Hospice'), 3, NA)))),
+                          levels = 1:3,
+                          labels = c('Discharged to home, psych or prison',
                                      'Inpatient rehab',
-                                     'Jail or prison',
-                                     'Long-term care')))
+                                     'Long-term care or hospice')))
 label(tbi.oneobs$disposition.comb) <- 'Discharge disposition among survivors'
 
 ## Combine Marshall class IV with class III d/t small N (only 6 survivors in class IV)
