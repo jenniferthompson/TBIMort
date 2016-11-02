@@ -416,7 +416,6 @@ We will include the following covariates in both models (reference levels for ca
     - Minimum sodium
     - Mental status *(`r paste(levels(tbi.daily.icu$mental.status), collapse = '; ')`)*
     - Modified SOFA score (excluding CNS component)
-    - Maximum ICP score, dichotomous *(`r paste(levels(tbi.daily.icu$max.icp.dich), collapse = '; ')`)*
     - 24-hour doses of medications: all will be cube root transformed to mitigate the influence of extremely high values
         - Opioids (hydromorphone, morphine, hydrocodone, methadone, remifentanil, and fentanyl; converted to fentanyl equivalents); allowed to be nonlinear
         - Benzodiazepines (lorazepam, diazepam, alprazolam, clonazepine, and midazolam; all converted to midazolam equivalents); allowed to be nonlinear
@@ -592,7 +591,7 @@ others, we performed a redundancy analysis. Adjusted R^2^ values for each covari
 redun.mort.inhosp <- redun(~ age + gender + insurance.code + iss + cpr.yn + marshall.comb +
                              pt.cerebral.na + I(max.motor.imp) + pupil.react.imp + min.glucose.imp +
                              min.hemoglobin.imp + min.sodium.imp + mental.status +
-                             sofa.mod.nanormal.imp + max.icp.dich + tot.opioid.cube +
+                             sofa.mod.nanormal.imp + tot.opioid.cube +
                              tot.benzo.cube + I(tot.antipsyc.cube) + tot.betablock.cube +
                              I(tot.propofol.cube) + any.dex + I(tot.clonid.cube) + any.prbc +
                              any.plasmaplt,
@@ -630,7 +629,6 @@ mod.mort.inhosp <- fit.mult.impute(Surv.mort.inhosp ~ rcs(age, 4) + gender + ins
                                      max.motor.imp + pupil.react.imp + rcs(min.glucose.imp, 4) +
                                      rcs(min.hemoglobin.imp, 4) + rcs(min.sodium.imp, 4) +
                                      mental.status + rcs(sofa.mod.nanormal.imp, 4) +
-                                     max.icp.dich +
                                      ## Drug doses with enough variability to include w/ splines
                                      rcs(tot.opioid.cube, 4) + rcs(tot.benzo.cube, 4) +
                                      rcs(tot.betablock.cube, 4) +
@@ -914,7 +912,7 @@ others, we performed a redundancy analysis. Adjusted R^2^ values for each covari
 redun.mort.3yr <- redun(~ age + gender + insurance.code + iss + cpr.yn + marshall.comb +
                           pt.cerebral.na + I(max.motor.imp) + pupil.react.imp + min.glucose.imp +
                           min.hemoglobin.imp + min.sodium.imp + mental.status +
-                          sofa.mod.nanormal.imp + max.icp.dich + tot.opioid.cube +
+                          sofa.mod.nanormal.imp + tot.opioid.cube +
                           tot.benzo.cube + I(tot.antipsyc.cube) + tot.betablock.cube +
                           I(tot.propofol.cube) + any.dex + I(tot.clonid.cube) + any.prbc +
                           any.plasmaplt + disposition.comb + vent.days + los,
@@ -953,7 +951,6 @@ mod.mort.3yr <- fit.mult.impute(Surv.mort.3yr ~ rcs(age, 4) + gender + insurance
                                   max.motor.imp + pupil.react.imp + rcs(min.glucose.imp, 4) +
                                   rcs(min.hemoglobin.imp, 4) + rcs(min.sodium.imp, 4) +
                                   mental.status + rcs(sofa.mod.nanormal.imp, 4) +
-                                  max.icp.dich +
                                   ## Drug doses with enough variability to include w/ splines
                                   rcs(tot.opioid.cube, 4) + rcs(tot.benzo.cube, 4) +
                                   rcs(tot.betablock.cube, 4) +
