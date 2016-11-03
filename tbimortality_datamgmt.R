@@ -423,19 +423,39 @@ demog.data.trimmed <- demog.data.trimmed %>%
          ##  censored at discharge
          time.death.dc = ifelse(!is.na(time.death.inhosp), time.death.inhosp,
                                 as.numeric(difftime(discharge.date, pt.admit, units = 'days')) + 1),
-         ## Time to overall death: admission to max(SSDI death, hospital death)
-         time.death.ever = ifelse(is.na(pt.admit) |
-                                    (is.na(hosp.death.date) & is.na(ssdi.death.date)), NA,
-                           ifelse(is.na(hosp.death.date) | ssdi.death.date > hosp.death.date,
-                                  as.numeric(difftime(ssdi.death.date, pt.admit,
-                                                      units = 'days')) + 1,
-                                  as.numeric(difftime(hosp.death.date, pt.admit,
-                                                      units = 'days')) + 1)),
-         ## Time to 3-year death: time to overall death, or censored at 1095 days
-         time.death.3yr = ifelse(is.na(time.death.ever) | time.death.ever > 1095, 1095,
-                                 time.death.ever),
-         died.3yr = factor(ifelse(!is.na(time.death.ever) & time.death.ever <= 1095, 1, 0),
-                           levels = 0:1, labels = c('No', 'Yes')))
+         ## Time to overall death from *admission*: admission to max(SSDI death, hospital death)
+         time.death.ever.adm = ifelse(is.na(pt.admit) |
+                                        (is.na(hosp.death.date) & is.na(ssdi.death.date)), NA,
+                               ifelse(is.na(hosp.death.date) |
+                                        (!is.na(ssdi.death.date) &
+                                           ssdi.death.date > hosp.death.date),
+                                      as.numeric(difftime(ssdi.death.date, pt.admit,
+                                                          units = 'days')) + 1,
+                                      as.numeric(difftime(hosp.death.date, pt.admit,
+                                                          units = 'days')) + 1)),
+         ## Time to 3-year death from *admission*: time to overall death, or censored at 1095 days
+         time.death.3yr.adm = ifelse(is.na(time.death.ever.adm) | time.death.ever.adm > 1095, 1095,
+                                     time.death.ever.adm),
+         died.3yr.adm = factor(ifelse(!is.na(time.death.ever.adm) & time.death.ever.adm <= 1095, 1,
+                                      0),
+                               levels = 0:1, labels = c('No', 'Yes')),
+         ## Time to overall death from *discharge*: discharge to max(SSDI death, hospital death)
+         ## (NA for patients who died in hospital)
+         time.death.ever.dc = ifelse(is.na(discharge.date) |
+                                       (!is.na(hosp.death) & hosp.death == 'Yes') |
+                                       is.na(ssdi.death.date), NA,
+                                     as.numeric(difftime(ssdi.death.date, discharge.date,
+                                                         units = 'days')) + 1),
+         ## Time to 3-year death from *discharge*: time to overall death, or censored at 1095 days
+         time.death.3yr.dc = ifelse(is.na(discharge.date) |
+                                      (!is.na(hosp.death) & hosp.death == 'Yes'), NA,
+                             ifelse(is.na(time.death.ever.dc) | time.death.ever.dc > 1095, 1095,
+                                    time.death.ever.dc)),
+         died.3yr.dc = factor(ifelse(is.na(discharge.date) |
+                                       (!is.na(hosp.death) & hosp.death == 'Yes'), NA,
+                              ifelse(!is.na(time.death.ever.dc) & time.death.ever.adm <= 1095, 1,
+                                     0)),
+                              levels = 0:1, labels = c('No', 'Yes')))
 
 ## Delirium, coma duration
 mental.vars <- daily.data %>%
@@ -475,8 +495,9 @@ tbi.oneobs <- subset(demog.data.trimmed,
                      select = c(mrn, age, gender, race, insurance.code, iss, cpr.yn, pt.marshall,
                                 pt.cerebral, pt.cerebral.na, pt.epidural, pt.epidural.na, pt.injury,
                                 pt.injury.na, vent.days, disposition.coded, fim.total, icu.los, los,
-                                hosp.death, time.death.inhosp, time.death.dc, died.3yr,
-                                time.death.3yr, time.death.ever)) %>%
+                                hosp.death, time.death.inhosp, time.death.dc, died.3yr.adm,
+                                time.death.3yr.adm, time.death.ever.adm, died.3yr.dc,
+                                time.death.3yr.dc, time.death.ever.dc)) %>%
   left_join(day00.data, by = 'mrn') %>%
   left_join(mental.vars, by = 'mrn') %>%
   left_join(select(dcfd.data, mrn, dcfd.14), by = 'mrn') %>%
@@ -506,9 +527,12 @@ label(tbi.oneobs$los) <- 'Hospital LOS'
 label(tbi.oneobs$hosp.death) <- 'Died in hospital'
 label(tbi.oneobs$time.death.inhosp) <- 'Days to in-hospital death'
 label(tbi.oneobs$time.death.dc) <- 'Hospital LOS (days to in-hospital death or discharge)'
-label(tbi.oneobs$time.death.ever) <- 'Days to death'
-label(tbi.oneobs$died.3yr) <- 'Died on or before 3-year mark'
-label(tbi.oneobs$time.death.3yr) <- 'Days to death or 3-year mark'
+label(tbi.oneobs$time.death.ever.adm) <- 'Days to death from admission'
+label(tbi.oneobs$died.3yr.adm) <- 'Died on or before 3-year mark, all patients'
+label(tbi.oneobs$time.death.3yr.adm) <- 'Days to death or 3-year mark from admission'
+label(tbi.oneobs$time.death.ever.dc) <- 'Days to death from discharge'
+label(tbi.oneobs$died.3yr.dc) <- 'Died on or before 3-year mark, survivors'
+label(tbi.oneobs$time.death.3yr.dc) <- 'Days to death or 3-year mark from discharge'
 label(tbi.oneobs$base.weight) <- 'Median weight during encounter (kg)'
 label(tbi.oneobs$base.motor) <- 'Maximum motor response, day 0'
 label(tbi.oneobs$base.motor.imp) <- 'Max motor response, day 0 (imputed)'
