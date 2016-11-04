@@ -202,6 +202,9 @@ pts.inc <- intersect(icu.pts, unique(tbi.daily.icu$mrn))
 ## Subset tbi.oneobs to only include pts.inc
 tbi.oneobs.icu <- filter(tbi.oneobs, mrn %in% pts.inc)
 
+## -- Patients who survived hospital stay, are eligible for 3-year mortality model -----------------
+pts.inc.survived <- subset(tbi.oneobs.icu, hosp.death == 'No')$mrn
+
 ```
 
 # Cohort Description
@@ -265,22 +268,31 @@ pandoc.table(consort.table, justify = c('left', 'right'))
 ## Descriptive Statistics for Baseline, Summary and Daily Characteristics
 #### `r table_nums('descstats_oneobs')`
 ```{r print_descstats_oneobs, results = 'markup'}
-summaryM(age + gender + race + insurance.code + iss + cpr.yn + pt.marshall + pt.cerebral +
-           pt.epidural + pt.injury + vent.days + days.mental + days.del + days.coma + dcfd.14 +
-           icu.los + los + hosp.death + disposition.coded + fim.total + died.3yr ~ 1,
-         data = tbi.oneobs.icu)
+html(summaryM(age + gender + race + insurance.code + iss + cpr.yn + pt.marshall + pt.cerebral +
+                pt.epidural + pt.injury + vent.days + days.mental + days.del + days.coma + dcfd.14 +
+                icu.los + los + hosp.death + disposition.coded + fim.total + died.3yr.adm ~ 1,
+              data = tbi.oneobs.icu),
+     exclude1 = FALSE, long = TRUE, npct = 'both', what = '%', digits = 2,
+     prmsd = TRUE, brmsd = TRUE, rmarkdown = TRUE,
+     msdsize = markupSpecs$html$smaller2,
+     caption = 'Descriptive Statistics, All Eligible Patients')
 
 ```
 
 #### `r table_nums('descstats_daily')`
 ```{r print_descstats_daily, results = 'markup'}
-summaryM(mental.status + max.motor.imp + pupil.react.imp + min.glucose.imp + min.hemoglobin.imp +
-           min.sodium.imp + max.icp.imp + max.icp.dich + sofa.nanormal.imp + any.benzo + tot.benzo +
-           any.opioid + tot.opioid + any.propofol + tot.propofol + any.dex + tot.dex + any.clonid +
-           tot.clonid + any.alpha2 + any.antipsyc + tot.antipsyc + any.betablock + tot.betablock +
-           any.pento + tot.pento + any.plasmaplt + units.cryo + units.plasma + units.platelets +
-           any.prbc + units.prbc ~ 1,
-         data = tbi.daily.icu)
+html(summaryM(mental.status + max.motor.imp + pupil.react.imp + min.glucose.imp +
+                min.hemoglobin.imp + min.sodium.imp + max.icp.imp + max.icp.dich +
+                sofa.nanormal.imp + any.benzo + tot.benzo + any.opioid + tot.opioid + any.propofol +
+                tot.propofol + any.dex + tot.dex + any.clonid + tot.clonid + any.alpha2 +
+                any.antipsyc + tot.antipsyc + any.betablock + tot.betablock + any.pento +
+                tot.pento + any.plasmaplt + units.cryo + units.plasma + units.platelets +
+                any.prbc + units.prbc ~ 1,
+              data = tbi.daily.icu),
+     exclude1 = FALSE, long = TRUE, npct = 'both', what = '%', digits = 2,
+     prmsd = TRUE, brmsd = TRUE, rmarkdown = TRUE,
+     msdsize = markupSpecs$html$smaller2,
+     caption = 'Descriptive Statistics, All Eligible Patient-Days')
 
 ```
 
@@ -446,6 +458,48 @@ Due to the amount of missingness in our data but also the complexity of performi
 imputation with both baseline (time-constant) and daily (time-varying) covariates, we will include
 in these models only eligible patients with complete baseline data, and will use multiple imputation
 to handle missing daily data. Patient exclusions and missingness will be detailed for each model.
+
+### Correlation between Continuous Covariates
+```{r mort_cont_covars}
+mortality.continuous.covars <- c('age', 'iss', 'vent.days', 'los',
+                                 'max.motor.imp', 'min.glucose.imp', 'min.hemoglobin.imp',
+                                 'min.sodium.imp', 'sofa.mod.nanormal.imp', 'tot.opioid.cube',
+                                 'tot.benzo.cube', 'tot.antipsyc.cube', 'tot.betablock.cube',
+                                 'tot.propofol.cube', 'tot.clonid.cube')
+mortality.categorical.covars <- c('gender', 'insurance.code', 'marshall.comb', 'pt.cerebral.na',
+                                  'cpr.yn', 'pupil.react.imp', 'mental.status', 'any.dex',
+                                  'any.prbc', 'any.plasmaplt', 'disposition.comb')
+
+mort.corr.data <- select(tbi.oneobs.icu, mrn, one_of(mortality.continuous.covars)) %>%
+  right_join(select(tbi.daily.icu, mrn, one_of(mortality.continuous.covars)),
+             by = 'mrn')
+
+mort.inhosp.corr.data <- mort.corr.data %>%
+  filter(mrn %in% pts.inc) %>%
+  select(-mrn, -vent.days, -los)
+
+mort.3yr.corr.data <- mort.corr.data %>%
+  filter(mrn %in% pts.inc.survived) %>%
+  select(-mrn)
+
+## Continuous vs continuous: Spearman correlations
+library(corrplot)
+corr.mort.inhosp <- cor(mort.inhosp.corr.data, use = 'pairwise.complete.obs', method = 'spearman')
+corr.mort.3yr <- cor(mort.3yr.corr.data, use = 'pairwise.complete.obs', method = 'spearman')
+
+```
+
+```{r print_mort_inhosp_corr, results = 'asis'}
+corrplot.mixed(corr.mort.inhosp,
+               tl.cex = 0.5, title = 'In-Hospital Mortality', tl.col = 'black', mar = c(0, 0, 1, 0))
+
+```
+
+```{r print_mort_3yr_corr, results = 'asis'}
+corrplot.mixed(corr.mort.3yr,
+               tl.cex = 0.5, title = 'Three-Year Mortality', tl.col = 'black', mar = c(0, 0, 1, 0))
+
+```
 
 ## In-Hospital Mortality
 ```{r mort_inhosp_missing}
@@ -778,9 +832,6 @@ gg.mort.inhosp %>%
 
 ## Three-Year Mortality among Hospital Survivors
 ```{r mort_3yr_missing}
-## -- Patients who survived hospital stay, are eligible for 3-year mortality model -----------------
-pts.inc.survived <- subset(tbi.oneobs.icu, hosp.death == 'No')$mrn
-
 ## -- How many patients are missing *any* baseline or discharge variables? -------------------------
 tbi.oneobs.icu$include.mort.3yr <-
   ifelse(tbi.oneobs.icu$hosp.death == 'Yes', FALSE,
@@ -847,7 +898,7 @@ pandoc.table(mort.3yr.daily.missing[,c('Variable', '% (N)')], justify = c('left'
 base.mort.3yr <- tbi.oneobs.icu %>%
   filter(include.mort.3yr) %>%
   select(mrn, age, gender, insurance.code, iss, cpr.yn, marshall.comb, pt.cerebral.na,
-         disposition.comb, vent.days, los, died.3yr, time.death.3yr)
+         disposition.comb, vent.days, los, died.3yr.adm, time.death.3yr.adm)
 
 ## Daily data
 daily.mort.3yr.org <- tbi.daily.icu %>%
@@ -871,8 +922,8 @@ daily.mort.3yr.org <- tbi.daily.icu %>%
 tv.mort.3yr <- timevarying.data(idvar = 'mrn',
                                 recvar = 'study.day',
                                 org.data = daily.mort.3yr.org,
-                                time.var = 'time.death.3yr',
-                                event.var = 'died.3yr',
+                                time.var = 'time.death.3yr.adm',
+                                event.var = 'died.3yr.adm',
                                 event.string = 'Yes',
                                 data.set = tbi.oneobs.icu,
                                 out.strings = c('Alive through today', 'Died today'))
@@ -886,7 +937,10 @@ modeldata.mort.3yr <- tv.mort.3yr %>%
          min.hemoglobin.imp = set.backto.na(min.hemoglobin.imp),
          min.sodium.imp = set.backto.na(min.sodium.imp),
          mental.status = factor(set.backto.na(mental.status),
-                                levels = 1:3, labels = levels(tbi.daily$mental.status))) %>%
+                                levels = 1:3, labels = levels(tbi.daily$mental.status)),
+         ## If start.day = stop.day, add 0.5 to stop.day (mostly occurs in patients discharged to
+         ## hospice who died on day of discharge)
+         stop.day = ifelse(stop.day == start.day, stop.day + 0.5, stop.day)) %>%
   ## Add on baseline variables
   left_join(base.mort.3yr, ., by = 'mrn')
 
@@ -933,7 +987,7 @@ covariates will be included as specified above.
 ## -- Imputation for 3-year mortality --------------------------------------------------------------
 set.seed(56)
 areg.mort.3yr <- aregImpute(~ age + gender + insurance.code + iss + cpr.yn + marshall.comb +
-                              pt.cerebral.na + died.3yr + I(max.motor.imp) + pupil.react.imp +
+                              pt.cerebral.na + died.3yr.adm + I(max.motor.imp) + pupil.react.imp +
                               min.glucose.imp + min.hemoglobin.imp + min.sodium.imp +
                               mental.status + sofa.mod.nanormal.imp + max.icp.dich +
                               tot.opioid.cube + tot.benzo.cube + tot.antipsyc.cube +
