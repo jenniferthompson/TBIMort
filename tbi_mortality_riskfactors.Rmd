@@ -43,16 +43,26 @@ library(rms)
 library(plotly)
 library(viridis)
 
+## Home directory (if on Mac, assumes connected to desktop via Samba)
+if(Sys.info()['sysname'] == 'Darwin'){
+  home.dir <- '/Volumes'
+} else{
+  home.dir <- '/home'
+}
+
 ## -- Functions for general use --------------------------------------------------------------------
 ## For combining multiple plots
-source('/home/thomps23/R/multiplot.r')
+source(file.path(home.dir, 'thomps23', 'R', 'multiplot.r'))
 
 ## Source function for creating time-varying data sets for Cox models
 source('tbi_timevarying.R')
 
+## Source update to as.mids() *not* requiring data set to be sorted by .imp
+source(file.path(home.dir, 'thomps23', 'R', 'JTMisc', 'as_mids_update.R'))
+
 ## Source functions for getting results from rms model fits
-source('/home/thomps23/R/rmsHelpers/model_results.R')
-source('/home/thomps23/R/rmsHelpers/calc_comparisons_rms.R')
+source(file.path(home.dir, 'thomps23', 'R', 'rmsHelpers', 'model_results.R'))
+source(file.path(home.dir, 'thomps23', 'R', 'rmsHelpers', 'calc_comparisons_rms.R'))
 
 ## Column headers for model.results() tables for different kinds of model fits
 cph.results.headers <-
