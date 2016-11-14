@@ -39,9 +39,11 @@ space.15 <- paste(rep("&nbsp;", 15), collapse = '')
 library(captioner)
 library(tidyverse)
 library(pander)
+library(corrplot)
 library(rms)
 library(plotly)
 library(viridis)
+library(mice)
 
 ## Home directory (if on Mac, assumes connected to desktop via Samba)
 if(Sys.info()['sysname'] == 'Darwin'){
@@ -420,8 +422,10 @@ amounts of missingness and strategies for handling it will be detailed separatel
 To identify potential risk factors for both in-hospital and three-year mortality among this cohort,
 we will use Cox proportional hazards regression with both baseline and time-dependent covariates.
 
-## Model Covariates
-We will include the following covariates in both models (reference levels for categorical variables are listed first):
+## In-Hospital Mortality
+### Model Covariates
+We will include the following covariates in the in-hospital mortality model (reference levels for
+categorical variables are listed first):
 
 - Baseline
     - Age at admission
@@ -450,10 +454,6 @@ We will include the following covariates in both models (reference levels for ca
     - 24-hour units of blood products:
         - PRBC *(`r paste(levels(tbi.daily.icu$any.prbc), collapse = '; ')`)*
         - Plasma, platelets, and/or cryo *(`r paste(levels(tbi.daily.icu$any.plasmaplt), collapse = '; ')`)*
-- For 3-year mortality model only:
-    - Discharge disposition *(`r paste(levels(tbi.oneobs.icu$disposition.comb), collapse = '; ')`); note that LTAC, nursing care and transfers were combined into a single category, and patients discharged to a psychiatric unit were combined with those discharged home*
-    - Days on mechanical ventilation
-    - Length of hospital stay
 
 The following covariates were considered for inclusion, but changed or excluded as follows:
 
@@ -466,8 +466,8 @@ variable. Similarly, we had to dichotomize PRBC into given vs not given, rather 
 
 Due to the amount of missingness in our data but also the complexity of performing multiple
 imputation with both baseline (time-constant) and daily (time-varying) covariates, we will include
-in these models only eligible patients with complete baseline data, and will use multiple imputation
-to handle missing daily data. Patient exclusions and missingness will be detailed for each model.
+in this model only eligible patients with complete baseline data, and will use multiple imputation
+to handle missing daily data. Patient exclusions and missingness will be detailed below.
 
 ### Correlation between Continuous Covariates
 ```{r mort_cont_covars}
@@ -488,14 +488,10 @@ mort.inhosp.corr.data <- mort.corr.data %>%
   filter(mrn %in% pts.inc) %>%
   select(-mrn, -vent.days, -los)
 
-mort.3yr.corr.data <- mort.corr.data %>%
-  filter(mrn %in% pts.inc.survived) %>%
-  select(-mrn)
-
 ## Continuous vs continuous: Spearman correlations
-library(corrplot)
-corr.mort.inhosp <- cor(mort.inhosp.corr.data, use = 'pairwise.complete.obs', method = 'spearman')
-corr.mort.3yr <- cor(mort.3yr.corr.data, use = 'pairwise.complete.obs', method = 'spearman')
+corr.mort.inhosp <- cor(mort.inhosp.corr.data,
+                        use = 'pairwise.complete.obs',
+                        method = 'spearman')
 
 ```
 
@@ -505,13 +501,6 @@ corrplot.mixed(corr.mort.inhosp,
 
 ```
 
-```{r print_mort_3yr_corr, results = 'asis'}
-corrplot.mixed(corr.mort.3yr,
-               tl.cex = 0.5, title = 'Three-Year Mortality', tl.col = 'black', mar = c(0, 0, 1, 0))
-
-```
-
-## In-Hospital Mortality
 ```{r mort_inhosp_missing}
 ## -- Lists of covariates for mortality models -----------------------------------------------------
 mortality.baseline.covars <- c('age', 'gender', 'insurance.code', 'marshall.comb', 'pt.cerebral.na',
@@ -646,6 +635,9 @@ label(modeldata.mort.inhosp$any.plasmaplt) <- label(tbi.daily$any.plasmaplt)
 ## Shorten super long label for modified SOFA
 label(modeldata.mort.inhosp$sofa.mod.nanormal.imp) <- 'Modified SOFA (missing comp. = 0)'
 
+dd.inhosp <- datadist(modeldata.mort.inhosp, adjto.cat = 'first')
+options(datadist = 'dd.inhosp')
+
 ```
 
 ### Redundancy Analysis
@@ -745,8 +737,6 @@ outcome, hazard ratios are only valid for the comparisons listed: For continuous
 
 #### `r table_nums('mort_inhosp_results')`
 ```{r mort_inhosp_results}
-dd.inhosp <- datadist(modeldata.mort.inhosp, adjto.cat = 'first')
-options(datadist = 'dd.inhosp')
 results.mort.inhosp <- model.results(mod.mort.inhosp,
                                      data.set = modeldata.mort.inhosp,
                                      print.format = 'plain')
@@ -891,8 +881,7 @@ pandoc.table(mort.3yr.baseline.missing, justify = c('left', 'right', 'right', 'r
 
 ```
 
-Among those patients included, we did have some missing daily data which is handled using multiple
-imputation. `r table_nums("mort_3yr_missing_daily", display = 'cite')` details the percentage
+Among those patients included, we will calculate summary statistics across the entire hospital stay, using multiple imputation to handle patient-days with missing data. `r table_nums("mort_3yr_missing_daily", display = 'cite')` details the percentage
 and number of in-hospital patient-days among the `r length(pts.inc.mort.3yr)` patients included
 in the three-year mortality model with each variable missing.
 
@@ -902,87 +891,155 @@ pandoc.table(mort.3yr.daily.missing[,c('Variable', '% (N)')], justify = c('left'
 
 ```
 
+Summary variables will be calculated as follows:
+
+1. Create multiply imputed longitudinal data sets (one record per in-hospital day)
+1. Calculate summary statistics (eg, days of delirium) for each patient in data set, separately
+1. Use these imputed data sets to run three-year mortality models and combine using usual multiple
+imputation procedures
+
 ```{r mort_3yr_datamgmt}
-## -- Create data set for 3-year mortality model ---------------------------------------------------
+## -- Create data sets for 3-year mortality model --------------------------------------------------
 ## Baseline and discharge information
 base.mort.3yr <- tbi.oneobs.icu %>%
   filter(include.mort.3yr) %>%
   select(mrn, age, gender, insurance.code, iss, cpr.yn, marshall.comb, pt.cerebral.na,
-         disposition.comb, vent.days, los, died.3yr.adm, time.death.3yr.adm)
+         disposition.comb, vent.days, los, died.3yr.dc, time.death.3yr.dc)
 
 ## Daily data
 daily.mort.3yr.org <- tbi.daily.icu %>%
   filter(mrn %in% pts.inc.mort.3yr) %>%
-  ## We have missingness for lab values, mental status, pupil reactivity, max motor. By default,
-  ## function for time-varying data sets will delete any row with missing data; we do not want this,
-  ## because we want to impute missing values later. Temporarily set all missings to -9999 (this
-  ## will make factors numeric; will need to fix later).
-  mutate(max.motor.imp = set.na.9999(max.motor.imp),
-         pupil.react.imp = set.na.9999(as.numeric(pupil.react.imp)),
-         min.glucose.imp = set.na.9999(min.glucose.imp),
-         min.hemoglobin.imp = set.na.9999(min.hemoglobin.imp),
-         min.sodium.imp = set.na.9999(min.sodium.imp),
-         mental.status = set.na.9999(as.numeric(mental.status))) %>%
   select(mrn, study.day, max.motor.imp, pupil.react.imp, min.glucose.imp, min.hemoglobin.imp,
-         min.sodium.imp, mental.status, sofa.mod.nanormal.imp, max.icp.imp, max.icp.dich,
-         tot.opioid.cube, tot.benzo.cube, tot.antipsyc.cube, tot.betablock.cube, tot.propofol.cube,
-         any.dex, tot.clonid.cube, any.prbc, any.plasmaplt)
+         min.sodium.imp, mental.status, sofa.mod.nanormal.imp, max.icp.dich, tot.opioid,
+         tot.benzo, tot.antipsyc, tot.betablock, tot.propofol, tot.clonid, any.dex,
+         any.prbc, any.plasmaplt)
 
-## Create beginning time-varying data set
-tv.mort.3yr <- timevarying.data(idvar = 'mrn',
-                                recvar = 'study.day',
-                                org.data = daily.mort.3yr.org,
-                                time.var = 'time.death.3yr.adm',
-                                event.var = 'died.3yr.adm',
-                                event.string = 'Yes',
-                                data.set = tbi.oneobs.icu,
-                                out.strings = c('Alive through today', 'Died today'))
+## Combine baseline and daily variables to prep for imputation
+basedaily.mort.3yr <- left_join(base.mort.3yr, daily.mort.3yr.org, by = 'mrn')
 
-modeldata.mort.3yr <- tv.mort.3yr %>%
-  ## Replace -9999s with NAs, refactor applicable variables
-  mutate(max.motor.imp = set.backto.na(max.motor.imp),
-         pupil.react.imp = factor(set.backto.na(pupil.react.imp),
-                                  levels = 1:3, labels = levels(tbi.daily$pupil.react.imp)),
-         min.glucose.imp = set.backto.na(min.glucose.imp),
-         min.hemoglobin.imp = set.backto.na(min.hemoglobin.imp),
-         min.sodium.imp = set.backto.na(min.sodium.imp),
-         mental.status = factor(set.backto.na(mental.status),
-                                levels = 1:3, labels = levels(tbi.daily$mental.status)),
-         ## If start.day = stop.day, add 0.5 to stop.day (mostly occurs in patients discharged to
-         ## hospice who died on day of discharge)
-         stop.day = ifelse(stop.day == start.day, stop.day + 0.5, stop.day)) %>%
-  ## Add on baseline variables
-  left_join(base.mort.3yr, ., by = 'mrn')
+## Impute daily values
+mice.mort.3yr <- mice(basedaily.mort.3yr[,-1], visitSequence = 'monotone')
 
-## For some reason, labels for some variables are not preserved. Add them again. Sigh.
-label(modeldata.mort.3yr$max.motor.imp) <- label(tbi.daily$max.motor.imp)
-label(modeldata.mort.3yr$pupil.react.imp) <- label(tbi.daily$pupil.react.imp)
-label(modeldata.mort.3yr$min.glucose.imp) <- label(tbi.daily$min.glucose.imp)
-label(modeldata.mort.3yr$min.hemoglobin.imp) <- label(tbi.daily$min.hemoglobin.imp)
-label(modeldata.mort.3yr$min.sodium.imp) <- label(tbi.daily$min.sodium.imp)
-label(modeldata.mort.3yr$mental.status) <- label(tbi.daily$mental.status)
-label(modeldata.mort.3yr$max.icp.dich) <- label(tbi.daily$max.icp.dich)
-label(modeldata.mort.3yr$any.dex) <- label(tbi.daily$any.dex)
-label(modeldata.mort.3yr$any.prbc) <- label(tbi.daily$any.prbc)
-label(modeldata.mort.3yr$any.plasmaplt) <- label(tbi.daily$any.plasmaplt)
-## Shorten super long label for modified SOFA
-label(modeldata.mort.3yr$sofa.mod.nanormal.imp) <- 'Modified SOFA (missing comp. = 0)'
+## Calculate summary statistics by imputation
+complete.mort.3yr <- complete(mice.mort.3yr, action = 'long', include = TRUE)
+
+summary.mort.3yr <- complete.mort.3yr %>%
+  mutate(mrn = rep(basedaily.mort.3yr$mrn, length(unique(complete.mort.3yr$.imp)))) %>%
+  group_by(.imp, mrn) %>%
+  summarise(days.motor.lt6 = sum(max.motor.imp < 6),
+            days.no.pupil.data = sum(is.na(pupil.react.imp)),
+            days.fixed.pupil = ifelse(days.no.pupil.data > 0, NA,
+                                      sum(pupil.react.imp %in% c('One reactive', 'Both fixed'))),
+            lowest.glucose = min(min.glucose.imp),
+            lowest.hemoglobin = min(min.hemoglobin.imp),
+            lowest.sodium = min(min.sodium.imp),
+            days.del = sum(mental.status == 'Delirious'),
+            days.coma = sum(mental.status == 'Comatose'),
+            highest.modsofa = max(sofa.mod.nanormal.imp),
+            mean.opioid.cube = mean(tot.opioid)^(1/3),
+            mean.benzo.cube = mean(tot.benzo)^(1/3),
+            mean.antipsyc.cube = mean(tot.antipsyc^(1/3)),
+            mean.betablock.cube = mean(tot.betablock)^(1/3),
+            mean.propofol.cube = mean(tot.propofol)^(1/3),
+            mean.clonid.cube = mean(tot.clonid)^(1/3),
+            ever.dex = factor(as.numeric(sum(any.dex == 'Some') > 0),
+                              levels = 0:1, labels = c('Never', 'At least some')),
+            ever.prbc = factor(as.numeric(sum(any.prbc == 'At least some') > 0),
+                               levels = 0:1, labels = c('Never', 'At least once')),
+            ever.plasmaplt = factor(as.numeric(sum(any.plasmaplt == 'At least one') > 0),
+                                    levels = 0:1, labels = c('Never', 'At least once'))) %>%
+  left_join(base.mort.3yr, by = 'mrn') %>%
+  as.data.frame()
+
+## Add variable labels
+label(summary.mort.3yr$.imp) <- 'Imputation'
+label(summary.mort.3yr$mrn) <- 'MRN'
+label(summary.mort.3yr$days.motor.lt6) <- 'Days with max motor score <6'
+label(summary.mort.3yr$days.no.pupil.data) <- 'Days with no pupil reactivity data'
+label(summary.mort.3yr$days.fixed.pupil) <- 'Days with at least one fixed pupil'
+label(summary.mort.3yr$lowest.glucose) <- 'Lowest glucose in hospital'
+label(summary.mort.3yr$lowest.hemoglobin) <- 'Lowest hemoglobin in hospital'
+label(summary.mort.3yr$lowest.sodium) <- 'Lowest sodium in hospital'
+label(summary.mort.3yr$days.del) <- 'Days with delirium'
+label(summary.mort.3yr$days.coma) <- 'Days with coma'
+label(summary.mort.3yr$highest.modsofa) <- 'Highest modified SOFA in hospital'
+label(summary.mort.3yr$mean.opioid.cube) <- 'Mean (24h opioids), cube root'
+label(summary.mort.3yr$mean.benzo.cube) <- 'Mean (24h benzodiazepines), cube root'
+label(summary.mort.3yr$mean.antipsyc.cube) <- 'Mean (24h antipsychotics), cube root'
+label(summary.mort.3yr$mean.betablock.cube) <- 'Mean (24h beta-blockers), cube root'
+label(summary.mort.3yr$mean.propofol.cube) <- 'Mean (24h propofol), cube root'
+label(summary.mort.3yr$mean.clonid.cube) <- 'Mean (24h clonidine), cube root'
+label(summary.mort.3yr$ever.dex) <- 'Ever received dexmedetomidine'
+label(summary.mort.3yr$ever.prbc) <- 'Ever received PRBC'
+label(summary.mort.3yr$ever.plasmaplt) <- 'Ever received plasma, platelets and/or cryo'
+
+## Put summary.mort.3yr back into mids format to use with mice
+mids.mort.3yr <- as.mids.update(summary.mort.3yr, .imp = 1, .id = NULL)
+
+## Pull out original summarized data to use as starting data set
+withmiss.mort.3yr <- summary.mort.3yr %>% filter(.imp == '0')
+
+## Set datadist
+dd.3yr <- datadist(summary.mort.3yr, adjto.cat = 'first')
+options(datadist = 'dd.3yr')
 
 ```
 
+### Model Covariates
+We will include the following covariates in the three-year mortality model (reference levels for
+categorical variables are listed first):
+
+- Baseline
+    - Age at admission
+    - Gender *(`r paste(levels(withmiss.mort.3yr$gender), collapse = '; ')`)*
+    - Insurance type *(`r paste(levels(withmiss.mort.3yr$insurance.code), collapse = '; ')`)*
+    - Marshall Class equivalent *(`r paste(levels(withmiss.mort.3yr$marshall.comb), collapse = '; ')`)*
+    - Cerebral subarachnoid hemorrhage (SAH) *(`r paste(levels(withmiss.mort.3yr$pt.cerebral.na), collapse = '; ')`)*
+    - Injurity Severity Score (ISS)
+    - CPR *(`r paste(levels(withmiss.mort.3yr$cpr.yn), collapse = '; ')`)*
+- In-Hospital
+    - Lowest glucose
+    - Lowest hemoglobin
+    - Lowest sodium
+    - Days with motor score < 6
+    - Days with at least one fixed pupil
+    - Days of delirium
+    - Days of coma
+    - Highest modified SOFA score (excluding CNS component)
+    - Mean (24-hour doses of medications), with the means cube root transformed to mitigate the influence of extremely high values:
+        - Opioids (hydromorphone, morphine, hydrocodone, methadone, remifentanil, and fentanyl; converted to fentanyl equivalents); allowed to be nonlinear
+        - Benzodiazepines (lorazepam, diazepam, alprazolam, clonazepine, and midazolam; all converted to midazolam equivalents); allowed to be nonlinear
+        - Antipsychotics (olanzapine, quetiapine, risperidone, ziprasidone, and haloperidol; all converted to haloperidol equivalents); forced to be linear
+        - Beta-blockers (propranolol, labetalol, esmolol, and metoprolol; all converted to metoprolol equivalents); allowed to be nonlinear
+        - Propofol; forced to be linear
+        - Clonidine; forced to be linear
+    - Whether patient ever received:
+        - Dexmedetomidine *(`r paste(levels(withmiss.mort.3yr$ever.dex), collapse = '; ')`)*
+        - PRBC *(`r paste(levels(withmiss.mort.3yr$ever.prbc), collapse = '; ')`)*
+        - Plasma, platelets, and/or cryo *(`r paste(levels(withmiss.mort.3yr$ever.plasmaplt), collapse = '; ')`)*
+- Discharge
+    - Days on mechanical ventilation
+    - Discharge disposition *(`r paste(levels(withmiss.mort.3yr$disposition.comb), collapse = '; ')`)*
+
+Hospital length of stay was also considered, but was strongly related to several other covariates,
+and so was not included in the final model since it would likely inflate standard errors without
+adding value.
+
 ### Redundancy Analysis
 To see if any of the covariates in our three-year mortality model are nearly fully explained by the
-others, we performed a redundancy analysis. Adjusted R^2^ values for each covariate are shown below.
+others, we performed a redundancy analysis on the original (unimputed) summary and baseline data.
+Adjusted R^2^ values for each covariate are shown below.
 
 ```{r mort_3yr_redun, results = 'markup'}
 redun.mort.3yr <- redun(~ age + gender + insurance.code + iss + cpr.yn + marshall.comb +
-                          pt.cerebral.na + I(max.motor.imp) + pupil.react.imp + min.glucose.imp +
-                          min.hemoglobin.imp + min.sodium.imp + mental.status +
-                          sofa.mod.nanormal.imp + tot.opioid.cube +
-                          tot.benzo.cube + I(tot.antipsyc.cube) + tot.betablock.cube +
-                          I(tot.propofol.cube) + any.dex + I(tot.clonid.cube) + any.prbc +
-                          any.plasmaplt + disposition.comb + vent.days + los,
-                        data = modeldata.mort.3yr, type = 'adjusted', nk = 4, allcat = TRUE)
+                          pt.cerebral.na + days.motor.lt6 + days.fixed.pupil + lowest.glucose +
+                          lowest.hemoglobin + lowest.sodium + days.del + days.coma +
+                          highest.modsofa + mean.opioid.cube + mean.benzo.cube +
+                          mean.antipsyc.cube + mean.betablock.cube + mean.propofol.cube +
+                          mean.clonid.cube + ever.dex + ever.prbc + ever.plasmaplt +
+                          disposition.comb + vent.days + los,
+                        data = withmiss.mort.3yr,
+                        type = 'adjusted', nk = 4, allcat = TRUE)
 
 highr2.mort.3yr <- which.max(redun.mort.3yr$rsq1)
 
@@ -990,46 +1047,42 @@ round(redun.mort.3yr$rsq1, 2)
 
 ```
 
-The highest adjusted R^2^ value is `r round(redun.mort.3yr$rsq1[highr2.mort.3yr], 2)` (`r names(redun.mort.3yr$rsq1[highr2.mort.3yr])`), indicating that there are no redundant variables. All
-covariates will be included as specified above.
+The highest adjusted R^2^ value is `r round(redun.mort.3yr$rsq1[highr2.mort.3yr], 2)` (`r names(redun.mort.3yr$rsq1[highr2.mort.3yr])`). Although there are no variables correlated highly
+enough to absolutely be excluded from analysis, there are several strongly related ones. The figure
+below shows Spearman correlations among continuous variables from the first imputed data set.
+
+```{r print_mort_3yr_corr, results = 'asis', fig.width=10, fig.height=10}
+mort.3yr.corr.data <- summary.mort.3yr %>%
+  filter(.imp == '1') %>%
+  select(-.imp, -mrn, -days.no.pupil.data, -ever.dex, -ever.prbc, -ever.plasmaplt, -gender,
+         -insurance.code, -cpr.yn, -marshall.comb, -pt.cerebral.na, -disposition.comb, -died.3yr.dc,
+         -time.death.3yr.dc)
+
+corr.mort.3yr <- cor(mort.3yr.corr.data, use = 'pairwise.complete.obs', method = 'spearman')
+
+corrplot.mixed(corr.mort.3yr,
+               tl.cex = 0.75, title = 'Three-Year Mortality', tl.col = 'black', mar = c(0, 0, 1, 0))
+
+```
+
 
 ```{r mort_3yr_fitmod}
-## -- Imputation for 3-year mortality --------------------------------------------------------------
-set.seed(56)
-areg.mort.3yr <- aregImpute(~ age + gender + insurance.code + iss + cpr.yn + marshall.comb +
-                              pt.cerebral.na + died.3yr.adm + I(max.motor.imp) + pupil.react.imp +
-                              min.glucose.imp + min.hemoglobin.imp + min.sodium.imp +
-                              mental.status + sofa.mod.nanormal.imp + max.icp.dich +
-                              tot.opioid.cube + tot.benzo.cube + tot.antipsyc.cube +
-                              tot.betablock.cube + tot.propofol.cube + any.dex +
-                              tot.clonid.cube + any.prbc + any.plasmaplt + disposition.comb +
-                              vent.days + los + start.day,
-                            data = modeldata.mort.3yr,
-                            n.impute = 5, burnin = 3)
-
-## -- Fit model for in-hospital mortality ----------------------------------------------------------
-Surv.mort.3yr <- with(modeldata.mort.3yr, Surv(time = start.day,
-                                               time2 = stop.day,
-                                               event = as.numeric(had.event)))
+Surv.mort.3yr <- with(withmiss.mort.3yr, Surv(time = time.death.3yr.dc,
+                                              event = as.numeric(died.3yr.dc)))
 
 mod.mort.3yr <- fit.mult.impute(Surv.mort.3yr ~ rcs(age, 4) + gender + insurance.code +
                                   rcs(iss, 4) + cpr.yn + marshall.comb + pt.cerebral.na +
-                                  max.motor.imp + pupil.react.imp + rcs(min.glucose.imp, 4) +
-                                  rcs(min.hemoglobin.imp, 4) + rcs(min.sodium.imp, 4) +
-                                  mental.status + rcs(sofa.mod.nanormal.imp, 4) +
-                                  ## Drug doses with enough variability to include w/ splines
-                                  rcs(tot.opioid.cube, 4) + rcs(tot.benzo.cube, 4) +
-                                  rcs(tot.betablock.cube, 4) +
-                                  ## 3 drugs have too many 0s + otherwise sparse data,
-                                  ## can't fit splines
-                                  tot.antipsyc.cube + tot.propofol.cube + tot.clonid.cube +
-                                  ## Dex and blood products have too many 0s + wide range;
-                                  ## dichotomize
-                                  any.dex + any.prbc + any.plasmaplt +
-                                  disposition.comb + vent.days + los,
+                                  days.motor.lt6 + days.fixed.pupil +
+                                  rcs(days.del, 3) + rcs(days.coma, 3) + rcs(highest.modsofa, 4) +
+                                  rcs(lowest.glucose, 4) + rcs(lowest.hemoglobin, 4) +
+                                  rcs(lowest.sodium, 4) + rcs(mean.opioid.cube, 3) +
+                                  rcs(mean.benzo.cube, 3) + mean.antipsyc.cube +
+                                  rcs(mean.betablock.cube, 3) + rcs(mean.propofol.cube, 4) +
+                                  rcs(mean.clonid.cube, 3) + ever.dex + ever.prbc + ever.plasmaplt +
+                                  rcs(vent.days, 3) + disposition.comb,
                                 fitter = cph,
-                                xtrans = areg.mort.3yr,
-                                data = modeldata.mort.3yr,
+                                data = withmiss.mort.3yr,
+                                xtrans = mids.mort.3yr,
                                 x = TRUE, y = TRUE)
 
 ```
@@ -1038,43 +1091,129 @@ mod.mort.3yr <- fit.mult.impute(Surv.mort.3yr ~ rcs(age, 4) + gender + insurance
 
 We checked the proportional hazards assumption graphically, looking at the time-dependent coefficient (beta(t)) over time for each model coefficient (code can be shown below).
 
-`r figure_nums('mort_3yr_zph', display = 'cite')` graphically examines the proportional hazards
-assumption (that beta(t) is roughly constant over time; in other words, we want to see flat lines).
-
-#### `r figure_nums('mort_3yr_zph')`
-```{r mort_3yr_checkph, results='asis'}
+```{r mort_3yr_checkph, results='hide'}
 ## -- Check proportional hazard assumption ---------------------------------------------------------
 zph.mort.3yr <- cox.zph(mod.mort.3yr, transform = 'log')
 
 par(mfrow = c(1, 2))
 plot(zph.mort.3yr, col = 'red', lwd = 2)
+abline(v = 0, lty = 2, col = 'gray')
 par(mfrow = c(1, 1))
 
 ## Text for when figure is included:
+# `r figure_nums('mort_inhosp_zph', display = 'cite')` graphically examines the proportional hazards
+# assumption (that beta(t) is roughly constant over time; in other words, we want to see flat lines).
+# 
+# #### `r figure_nums('mort_inhosp_zph')`
 
 ```
+
+We do not show the figures here to conserve space, but the proportional hazards
+assumption was generally satisfied.
 
 ### Model Results
 `r table_nums('mort_3yr_results', display = 'cite')` presents a summary of results from the
 three-year mortality model. Hazard ratios indicate a comparison between the "comparison" vs the "reference" columns, holding all other covariates at the median or reference category. For example,
-a patient who was `r round(dd.3yr$limits$age[3])` years old at the time of injury has about `r round(summary(mod.mort.3yr, age = c(dd.3yr$limits$age[1], dd.3yr$limits$age[3]), est.all = FALSE)[2, 'Effect'], 1)` times the hazard of death at any time point during the three years after admission compared to a patient who was `r round(dd.3yr$limits$age[1])` years old, assuming all other covariates are equal. Where possible, the reference and comparison values for continuous variables are the 25th and 75th percentiles, respectively; for variables where these quantities are the same (eg, several drug doses), these values are the minimum and maximum.
+a patient who was `r round(dd.3yr$limits$age[3])` years old at the time of injury has about `r round(summary(mod.mort.3yr, age = c(dd.3yr$limits$age[1], dd.3yr$limits$age[3]), est.all = FALSE)[2, 'Effect'], 1)` times the hazard of three-year death at any time point compared to a patient who was `r round(dd.3yr$limits$age[1])` years old, assuming all other covariates are equal. Where possible, the reference and comparison values for continuous variables are the 25th and 75th percentiles, respectively; for variables where these quantities are the same (eg, several drug doses), these values are the minimum and maximum.
 
 **Please note** that while p-values reflect the entire association of each covariate with our
 outcome, hazard ratios are only valid for the comparisons listed: For continuous covariates which are allowed to have a nonlinear association with mortality, the hazard ratios depend on the two values we choose; for categorical covariates with more than two categories, the hazard ratios depend on the reference level chosen. More detailed hazard ratios are displayed in `r figure_nums('mort_3yr_figures', display = 'cite')`.
 
 #### `r table_nums('mort_3yr_results')`
 ```{r mort_3yr_results}
-dd.3yr <- datadist(modeldata.mort.3yr, adjto.cat = 'first')
-options(datadist = 'dd.3yr')
 results.mort.3yr <- model.results(mod.mort.3yr,
-                                  data.set = modeldata.mort.3yr,
+                                  data.set = summary.mort.3yr,
                                   print.format = 'plain')
 names(results.mort.3yr) <- cph.results.headers
 
 ```
 
 ```{r print_mort_3yr_results, results = 'asis'}
-pandoc.table(results.mort.3yr, justify = 'lrrrrrr', style = 'rmarkdown', split.tables = 800)
+options(width = 200)
+pandoc.table(results.mort.3yr, justify = 'lrrrrrr', split.tables = Inf, split.cells = Inf)
+
+```
+
+#### `r figure_nums('mort_3yr_figures')`
+For numeric variables, all hazard ratios are for comparison to the median, our best "typical" value;
+comparison values are the 10th, 25th, 75th, and 90th percentiles by default, though in some cases
+(drug doses, for example), some of these percentiles are the same. For categorical variables, the
+reference level is the lefthand level.
+
+```{r mort_3yr_figures}
+## -- Get data frame of all HRs for all covariates -------------------------------------------------
+## Get all unique variables used in model fit
+vars.mort.3yr <- unique(gsub("'+|=.+$", "", names(mod.mort.3yr$coefficients)))
+
+hrs.mort.3yr <- bind_rows(lapply(vars.mort.3yr,
+                                 FUN = calcComparisonsRMS,
+                                 model.obj = mod.mort.3yr,
+                                 get.ratios = TRUE,
+                                 data.set = summary.mort.3yr))
+
+## -- Add variable *labels* ------------------------------------------------------------------------
+hrs.mort.3yr.labels <- as.data.frame(do.call(rbind,
+                                             lapply(vars.mort.3yr, FUN = function(v){
+                                               c('variable' = v,
+                                                 'varlabel' = label(summary.mort.3yr[,v]))
+                                             })))
+hrs.mort.3yr <- hrs.mort.3yr %>%
+  left_join(hrs.mort.3yr.labels, by = 'variable') %>%
+  left_join(select(results.mort.3yr, Covariate, P),
+            by = c("varlabel" = "Covariate"))
+
+## -- Create properly ordered factor levels --------------------------------------------------------
+hrs.mort.3yr.flevels <-
+  ## Get all unique factor levels + whether they are reference
+  unique(subset(hrs.mort.3yr, select = c(comp.c, is.ref))) %>%
+  ## Create variables by which to order: numeric/NA, then for character, whether reference
+  ## (numeric levels will always be ordered by numeric value, regardless of reference)
+  mutate(level.num = as.numeric(as.character(comp.c)),
+         is.ref.factor = ifelse(!is.na(level.num), FALSE, is.ref)) %>%
+  ## Only need original, new reference indicator, and numeric
+  select(comp.c, is.ref.factor, level.num) %>%
+  ## Take only unique: no need for multiple 0 levels, for example
+  unique() %>%
+  ## Sort all possible levels by 1. numeric values in order, 2. all reference levels,
+  ## 3. all other character levels
+  arrange(level.num, desc(is.ref.factor)) %>%
+  ## Give each unique value a numeric value
+  mutate(flevel.num = 1:nrow(.))
+
+## Merge numeric values onto original data set, create final factor variable
+hrs.mort.3yr <- hrs.mort.3yr %>%
+  left_join(select(hrs.mort.3yr.flevels, comp.c, flevel.num),
+            by = c('comp.c')) %>%
+  mutate(flevel = factor(flevel.num, labels = hrs.mort.3yr.flevels$comp.c),
+         varlabel.p = paste0(varlabel, '; P: ', P))
+
+## -- Create a single faceted plot for all covariate HRs vs reference levels -----------------------
+## Change column names to work better in tooltips
+names(hrs.mort.3yr) <- gsub('flevel', 'Comparison', names(hrs.mort.3yr))
+names(hrs.mort.3yr) <- gsub('lcl', 'Lower.CL', names(hrs.mort.3yr))
+names(hrs.mort.3yr) <- gsub('ucl', 'Upper.CL', names(hrs.mort.3yr))
+names(hrs.mort.3yr) <- gsub('effect', 'HR', names(hrs.mort.3yr))
+names(hrs.mort.3yr) <- gsub('ref.c', 'Reference', names(hrs.mort.3yr))
+
+gg.mort.3yr <- ggplot(data = hrs.mort.3yr,
+                      aes(x = Comparison, label = Reference, y = HR)) +
+  facet_wrap(~ varlabel.p, ncol = 1, scales = 'free') +
+  geom_hline(yintercept = 1, colour = 'grey90', size = 1.25) +
+  geom_pointrange(aes(ymin = Lower.CL, ymax = Upper.CL, colour = abs(log(HR)))) +
+  scale_color_viridis(direction = -1, end = 0.9, name = 'Effect Size<br>(Log Scale)') +
+  scale_x_discrete(name = '') +
+  scale_y_continuous(name = ' <br>Hazard Ratios (95% Confidence Intervals), Three-Year Mortality<br> ',
+                     breaks = c(0.25, 0.5, 1, 1.25, 1.5, 2, 4, 8, 16)) +
+  guides(fill = FALSE) +
+  theme_bw() +
+  theme(axis.text = element_text(size = 8))
+
+```
+
+```{r print_mort_3yr_figures, results = 'asis', fig.width=12, fig.height=95}
+gg.mort.3yr %>%
+  ggplotly(tooltip = c("x", "label", "y", "ymin", "ymax"))
+
 ```
 
 # Software Details
