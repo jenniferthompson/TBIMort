@@ -5,6 +5,7 @@ author: 'Jennifer Thompson, MPH; Supervisor: Rameela Chandrasekhar, PhD'
 date: '`r format(Sys.time(), "%B %d %Y")`'
 output:
   html_notebook:
+    theme: yeti
     code_folding: hide
     toc: yes
     toc_depth: 4
@@ -53,20 +54,9 @@ if(Sys.info()['sysname'] == 'Darwin'){
 }
 
 ## -- Functions for general use --------------------------------------------------------------------
-## For combining multiple plots
-source(file.path(home.dir, 'thomps23', 'R', 'multiplot.r'))
+library(JTHelpers)
 
-## Source function for creating time-varying data sets for Cox models
-source('tbi_timevarying.R')
-
-## Source update to as.mids() *not* requiring data set to be sorted by .imp
-source(file.path(home.dir, 'thomps23', 'R', 'JTMisc', 'as_mids_update.R'))
-
-## Source functions for getting results from rms model fits
-source(file.path(home.dir, 'thomps23', 'R', 'rmsHelpers', 'model_results.R'))
-source(file.path(home.dir, 'thomps23', 'R', 'rmsHelpers', 'calc_comparisons_rms.R'))
-
-## Column headers for model.results() tables for different kinds of model fits
+## Column headers for rms_model_results() tables for different kinds of model fits
 cph.results.headers <-
   c('Covariate', 'Reference', 'Comparison', 'HR (95% CI)', 'Chi-square', 'df', 'P')
 
@@ -220,6 +210,9 @@ pts.inc.survived <- subset(tbi.oneobs.icu, hosp.death == 'No')$mrn
 ```
 
 # Cohort Description
+
+---
+
 We originally collected electronic medical record data for `r length(unique(tbi.oneobs$mrn))`
 patients aged 16 years or older admitted to VUMC between August 2006 and July 2012 with traumatic
 brain injury (TBI) requiring hospitalization. TBI was classified based on ICD-9 diagnostic codes,
@@ -313,7 +306,7 @@ html(summaryM(mental.status + max.motor.imp + pupil.react.imp + min.glucose.imp 
 ## -- Describe daily drug, blood product doses -----------------------------------------------------
 ## Raw doses for histograms
 daily.drugs <- tbi.daily.icu %>%
-  select(mrn, study.day, tot.benzo.cube, tot.opioid.cube, tot.propofol.cube, tot.dex.cube,
+  dplyr::select(mrn, study.day, tot.benzo.cube, tot.opioid.cube, tot.propofol.cube, tot.dex.cube,
          tot.antipsyc.cube, tot.betablock.cube, tot.pento.cube, tot.clonid.cube, units.cryo,
          units.plasma, units.platelets, units.prbc) %>%
   gather(key = drug.or.product, value = amount, tot.benzo.cube:units.prbc)
@@ -345,6 +338,9 @@ ggplot(data = daily.drugs, aes(x = amount)) +
 ```
 
 # Clinical Imputation Rules for Missing Data
+
+---
+
 As this is medical record data, there is a large amount of missingness: labs are not ordered unless
 there is reason to order them, for example. We developed a set of clinical imputation rules to deal
 with much of this missingness among our covariates.
@@ -419,6 +415,9 @@ There is still missing data after these imputation rules are implemented; for ex
 amounts of missingness and strategies for handling it will be detailed separately for each analysis.
 
 # Mortality Outcomes
+
+---
+
 To identify potential risk factors for both in-hospital and three-year mortality among this cohort,
 we will use Cox proportional hazards regression with both baseline and time-dependent covariates.
 
@@ -480,13 +479,13 @@ mortality.categorical.covars <- c('gender', 'insurance.code', 'marshall.comb', '
                                   'cpr.yn', 'pupil.react.imp', 'mental.status', 'any.dex',
                                   'any.prbc', 'any.plasmaplt', 'disposition.comb')
 
-mort.corr.data <- select(tbi.oneobs.icu, mrn, one_of(mortality.continuous.covars)) %>%
-  right_join(select(tbi.daily.icu, mrn, one_of(mortality.continuous.covars)),
+mort.corr.data <- dplyr::select(tbi.oneobs.icu, mrn, one_of(mortality.continuous.covars)) %>%
+  right_join(dplyr::select(tbi.daily.icu, mrn, one_of(mortality.continuous.covars)),
              by = 'mrn')
 
 mort.inhosp.corr.data <- mort.corr.data %>%
   filter(mrn %in% pts.inc) %>%
-  select(-mrn, -vent.days, -los)
+  dplyr::select(-mrn, -vent.days, -los)
 
 ## Continuous vs continuous: Spearman correlations
 corr.mort.inhosp <- cor(mort.inhosp.corr.data,
@@ -541,7 +540,7 @@ rownames(mort.inhosp.baseline.missing) <- NULL
 ## Describe missingness among patient-days included in in-hospital mortality model
 mort.inhosp.daily.missing <- tbi.daily.icu %>%
   filter(mrn %in% pts.inc.mort.inhosp) %>%
-  select(one_of(mortality.daily.covars)) %>%
+  dplyr::select(one_of(mortality.daily.covars)) %>%
   missingInDataFrame() %>%
   filter(nmiss > 0)
 rownames(mort.inhosp.daily.missing) <- NULL
@@ -569,7 +568,8 @@ pandoc.table(mort.inhosp.daily.missing[,c('Variable', '% (N)')], justify = c('le
 ```
 
 ```{r mort_inhosp_datamgmt}
-## Functions to set missing values to/from -9999 so they don't kicked out of timevarying.data()
+## Functions to set missing values to/from -9999 so they don't kicked out of
+## create_countprocess_data()
 set.na.9999 <- function(x){ ifelse(is.na(x), -9999, x) }
 set.backto.na <- function(x){ ifelse(x == -9999, NA, x) }
 
@@ -577,8 +577,8 @@ set.backto.na <- function(x){ ifelse(x == -9999, NA, x) }
 ## Baseline information
 base.mort.inhosp <- tbi.oneobs.icu %>%
   filter(include.mort.inhosp) %>%
-  select(mrn, age, gender, insurance.code, iss, cpr.yn, marshall.comb, pt.cerebral.na, hosp.death,
-         time.death.dc)
+  dplyr::select(mrn, age, gender, insurance.code, iss, cpr.yn, marshall.comb, pt.cerebral.na,
+                hosp.death, time.death.dc)
 
 ## Daily data
 daily.mort.inhosp.org <- tbi.daily.icu %>%
@@ -593,20 +593,20 @@ daily.mort.inhosp.org <- tbi.daily.icu %>%
          min.hemoglobin.imp = set.na.9999(min.hemoglobin.imp),
          min.sodium.imp = set.na.9999(min.sodium.imp),
          mental.status = set.na.9999(as.numeric(mental.status))) %>%
-  select(mrn, study.day, max.motor.imp, pupil.react.imp, min.glucose.imp, min.hemoglobin.imp,
-         min.sodium.imp, mental.status, sofa.mod.nanormal.imp, max.icp.imp, max.icp.dich,
-         tot.opioid.cube, tot.benzo.cube, tot.antipsyc.cube, tot.betablock.cube, tot.propofol.cube,
-         any.dex, tot.clonid.cube, any.prbc, any.plasmaplt)
+  dplyr::select(mrn, study.day, max.motor.imp, pupil.react.imp, min.glucose.imp, min.hemoglobin.imp,
+                min.sodium.imp, mental.status, sofa.mod.nanormal.imp, max.icp.imp, max.icp.dich,
+                tot.opioid.cube, tot.benzo.cube, tot.antipsyc.cube, tot.betablock.cube,
+                tot.propofol.cube, any.dex, tot.clonid.cube, any.prbc, any.plasmaplt)
 
 ## Create beginning time-varying data set
-tv.mort.inhosp <- timevarying.data(idvar = 'mrn',
-                                   recvar = 'study.day',
-                                   org.data = daily.mort.inhosp.org,
-                                   time.var = 'time.death.dc',
-                                   event.var = 'hosp.death',
-                                   event.string = 'Yes',
-                                   data.set = tbi.oneobs.icu,
-                                   out.strings = c('Alive through today', 'Died today'))
+tv.mort.inhosp <- create_countprocess_data(org.data = daily.mort.inhosp.org,
+                                           id.var = 'mrn',
+                                           record.var = 'study.day',
+                                           time.var = 'time.death.dc',
+                                           event.var = 'hosp.death',
+                                           event.string = 'Yes',
+                                           data.set = tbi.oneobs.icu,
+                                           out.strings = c('Alive through today', 'Died today'))
 
 modeldata.mort.inhosp <- tv.mort.inhosp %>%
   ## Replace -9999s with NAs, refactor applicable variables
@@ -679,7 +679,7 @@ areg.mort.inhosp <- aregImpute(~ age + gender + insurance.code + iss + cpr.yn + 
 ## -- Fit model for in-hospital mortality ----------------------------------------------------------
 Surv.mort.inhosp <- with(modeldata.mort.inhosp, Surv(time = start.day,
                                                      time2 = stop.day,
-                                                     event = as.numeric(had.event)))
+                                                     event = as.numeric(died)))
 
 mod.mort.inhosp <- fit.mult.impute(Surv.mort.inhosp ~ rcs(age, 4) + gender + insurance.code +
                                      rcs(iss, 4) + cpr.yn + marshall.comb + pt.cerebral.na +
@@ -737,9 +737,9 @@ outcome, hazard ratios are only valid for the comparisons listed: For continuous
 
 #### `r table_nums('mort_inhosp_results')`
 ```{r mort_inhosp_results}
-results.mort.inhosp <- model.results(mod.mort.inhosp,
-                                     data.set = modeldata.mort.inhosp,
-                                     print.format = 'plain')
+results.mort.inhosp <- rms_model_results(mod.mort.inhosp,
+                                         labeldf = modeldata.mort.inhosp,
+                                         printFormat = 'markdown')
 names(results.mort.inhosp) <- cph.results.headers
 
 ```
@@ -760,10 +760,10 @@ reference level is the lefthand level.
 vars.mort.inhosp <- unique(gsub("'+|=.+$", "", names(mod.mort.inhosp$coefficients)))
 
 hrs.mort.inhosp <- bind_rows(lapply(vars.mort.inhosp,
-                                    FUN = calcComparisonsRMS,
-                                    model.obj = mod.mort.inhosp,
-                                    get.ratios = TRUE,
-                                    data.set = modeldata.mort.inhosp))
+                                    FUN = rms_calc_comparisons,
+                                    rmsObj = mod.mort.inhosp,
+                                    getRatios = TRUE,
+                                    df = modeldata.mort.inhosp))
 
 ## -- Add variable *labels* ------------------------------------------------------------------------
 hrs.mort.inhosp.labels <- as.data.frame(do.call(rbind,
@@ -773,7 +773,7 @@ hrs.mort.inhosp.labels <- as.data.frame(do.call(rbind,
                                                 })))
 hrs.mort.inhosp <- hrs.mort.inhosp %>%
   left_join(hrs.mort.inhosp.labels, by = 'variable') %>%
-  left_join(select(results.mort.inhosp, Covariate, P),
+  left_join(dplyr::select(results.mort.inhosp, Covariate, P),
             by = c("varlabel" = "Covariate"))
 
 ## -- Create properly ordered factor levels --------------------------------------------------------
@@ -785,7 +785,7 @@ hrs.mort.inhosp.flevels <-
   mutate(level.num = as.numeric(as.character(comp.c)),
          is.ref.factor = ifelse(!is.na(level.num), FALSE, is.ref)) %>%
   ## Only need original, new reference indicator, and numeric
-  select(comp.c, is.ref.factor, level.num) %>%
+  dplyr::select(comp.c, is.ref.factor, level.num) %>%
   ## Take only unique: no need for multiple 0 levels, for example
   unique() %>%
   ## Sort all possible levels by 1. numeric values in order, 2. all reference levels,
@@ -796,7 +796,7 @@ hrs.mort.inhosp.flevels <-
 
 ## Merge numeric values onto original data set, create final factor variable
 hrs.mort.inhosp <- hrs.mort.inhosp %>%
-  left_join(select(hrs.mort.inhosp.flevels, comp.c, flevel.num),
+  left_join(dplyr::select(hrs.mort.inhosp.flevels, comp.c, flevel.num),
             by = c('comp.c')) %>%
   mutate(flevel = factor(flevel.num, labels = hrs.mort.inhosp.flevels$comp.c),
          varlabel.p = paste0(varlabel, '; P: ', P))
@@ -824,7 +824,7 @@ gg.mort.inhosp <- ggplot(data = hrs.mort.inhosp,
 
 ```
 
-```{r print_mort_inhosp_figures, results = 'asis', fig.width=12, fig.height=75}
+```{r print_mort_inhosp_figures, results = 'asis', fig.width=10, fig.height=75}
 gg.mort.inhosp %>%
   ggplotly(tooltip = c("x", "label", "y", "ymin", "ymax"))
 
@@ -863,7 +863,7 @@ rownames(mort.3yr.baseline.missing) <- NULL
 ## Describe missingness among patient-days included in in-hospital mortality model
 mort.3yr.daily.missing <- tbi.daily.icu %>%
   filter(mrn %in% pts.inc.mort.3yr) %>%
-  select(one_of(mortality.daily.covars)) %>%
+  dplyr::select(one_of(mortality.daily.covars)) %>%
   missingInDataFrame() %>%
   filter(nmiss > 0)
 rownames(mort.3yr.daily.missing) <- NULL
@@ -903,16 +903,16 @@ imputation procedures
 ## Baseline and discharge information
 base.mort.3yr <- tbi.oneobs.icu %>%
   filter(include.mort.3yr) %>%
-  select(mrn, age, gender, insurance.code, iss, cpr.yn, marshall.comb, pt.cerebral.na,
-         disposition.comb, vent.days, los, died.3yr.dc, time.death.3yr.dc)
+  dplyr::select(mrn, age, gender, insurance.code, iss, cpr.yn, marshall.comb, pt.cerebral.na,
+                disposition.comb, vent.days, los, died.3yr.dc, time.death.3yr.dc)
 
 ## Daily data
 daily.mort.3yr.org <- tbi.daily.icu %>%
   filter(mrn %in% pts.inc.mort.3yr) %>%
-  select(mrn, study.day, max.motor.imp, pupil.react.imp, min.glucose.imp, min.hemoglobin.imp,
-         min.sodium.imp, mental.status, sofa.mod.nanormal.imp, max.icp.dich, tot.opioid,
-         tot.benzo, tot.antipsyc, tot.betablock, tot.propofol, tot.clonid, any.dex,
-         any.prbc, any.plasmaplt)
+  dplyr::select(mrn, study.day, max.motor.imp, pupil.react.imp, min.glucose.imp, min.hemoglobin.imp,
+                min.sodium.imp, mental.status, sofa.mod.nanormal.imp, max.icp.dich, tot.opioid,
+                tot.benzo, tot.antipsyc, tot.betablock, tot.propofol, tot.clonid, any.dex,
+                any.prbc, any.plasmaplt)
 
 ## Combine baseline and daily variables to prep for imputation
 basedaily.mort.3yr <- left_join(base.mort.3yr, daily.mort.3yr.org, by = 'mrn')
@@ -1054,9 +1054,9 @@ below shows Spearman correlations among continuous variables from the first impu
 ```{r print_mort_3yr_corr, results = 'asis', fig.width=10, fig.height=10}
 mort.3yr.corr.data <- summary.mort.3yr %>%
   filter(.imp == '1') %>%
-  select(-.imp, -mrn, -days.no.pupil.data, -ever.dex, -ever.prbc, -ever.plasmaplt, -gender,
-         -insurance.code, -cpr.yn, -marshall.comb, -pt.cerebral.na, -disposition.comb, -died.3yr.dc,
-         -time.death.3yr.dc)
+  dplyr::select(-.imp, -mrn, -days.no.pupil.data, -ever.dex, -ever.prbc, -ever.plasmaplt, -gender,
+                -insurance.code, -cpr.yn, -marshall.comb, -pt.cerebral.na, -disposition.comb,
+                -died.3yr.dc, -time.death.3yr.dc)
 
 corr.mort.3yr <- cor(mort.3yr.corr.data, use = 'pairwise.complete.obs', method = 'spearman')
 
@@ -1084,6 +1084,52 @@ mod.mort.3yr <- fit.mult.impute(Surv.mort.3yr ~ rcs(age, 4) + gender + insurance
                                 data = withmiss.mort.3yr,
                                 xtrans = mids.mort.3yr,
                                 x = TRUE, y = TRUE)
+
+# ## Model using no imputation for ADS abstract
+# summary.mort.3yr.noimp <- basedaily.mort.3yr %>%
+#   group_by(mrn) %>%
+#   summarise(days.motor.lt6 = sum(max.motor.imp < 6),
+#             days.no.pupil.data = sum(is.na(pupil.react.imp)),
+#             days.fixed.pupil = ifelse(days.no.pupil.data > 0, NA,
+#                                       sum(pupil.react.imp %in% c('One reactive', 'Both fixed'))),
+#             lowest.glucose = min(min.glucose.imp),
+#             lowest.hemoglobin = min(min.hemoglobin.imp),
+#             lowest.sodium = min(min.sodium.imp),
+#             days.del = sum(mental.status == 'Delirious'),
+#             days.coma = sum(mental.status == 'Comatose'),
+#             highest.modsofa = max(sofa.mod.nanormal.imp),
+#             mean.opioid.cube = mean(tot.opioid)^(1/3),
+#             mean.benzo.cube = mean(tot.benzo)^(1/3),
+#             mean.antipsyc.cube = mean(tot.antipsyc^(1/3)),
+#             mean.betablock.cube = mean(tot.betablock)^(1/3),
+#             mean.propofol.cube = mean(tot.propofol)^(1/3),
+#             mean.clonid.cube = mean(tot.clonid)^(1/3),
+#             ever.dex = factor(as.numeric(sum(any.dex == 'Some') > 0),
+#                               levels = 0:1, labels = c('Never', 'At least some')),
+#             ever.prbc = factor(as.numeric(sum(any.prbc == 'At least some') > 0),
+#                                levels = 0:1, labels = c('Never', 'At least once')),
+#             ever.plasmaplt = factor(as.numeric(sum(any.plasmaplt == 'At least one') > 0),
+#                                     levels = 0:1, labels = c('Never', 'At least once'))) %>%
+#   left_join(base.mort.3yr, by = 'mrn') %>%
+#   as.data.frame()
+# 
+# Surv.mort.3yr.noimp <- with(summary.mort.3yr.noimp, Surv(time = time.death.3yr.dc,
+#                                                          event = as.numeric(died.3yr.dc)))
+# 
+# mod.mort.3yr.noimp <- cph(Surv.mort.3yr.noimp ~ rcs(age, 4) + gender + insurance.code +
+#                             rcs(iss, 4) + cpr.yn + marshall.comb + pt.cerebral.na +
+#                             days.motor.lt6 + days.fixed.pupil +
+#                             rcs(days.del, 3) + rcs(days.coma, 3) + rcs(highest.modsofa, 4) +
+#                             rcs(lowest.glucose, 4) + rcs(lowest.hemoglobin, 4) +
+#                             rcs(lowest.sodium, 4) + rcs(mean.opioid.cube, 3) +
+#                             rcs(mean.benzo.cube, 3) + mean.antipsyc.cube +
+#                             rcs(mean.betablock.cube, 3) + rcs(mean.propofol.cube, 4) +
+#                             rcs(mean.clonid.cube, 3) + ever.dex + ever.prbc + ever.plasmaplt +
+#                             rcs(vent.days, 3) + disposition.comb,
+#                           data = summary.mort.3yr.noimp,
+#                           x = TRUE, y = TRUE)
+# 
+# summary(mod.mort.3yr.noimp, days.del, est.all = FALSE)
 
 ```
 
@@ -1121,9 +1167,9 @@ outcome, hazard ratios are only valid for the comparisons listed: For continuous
 
 #### `r table_nums('mort_3yr_results')`
 ```{r mort_3yr_results}
-results.mort.3yr <- model.results(mod.mort.3yr,
-                                  data.set = summary.mort.3yr,
-                                  print.format = 'plain')
+results.mort.3yr <- rms_model_results(mod.mort.3yr,
+                                      labeldf = summary.mort.3yr,
+                                      printFormat = 'plain')
 names(results.mort.3yr) <- cph.results.headers
 
 ```
@@ -1146,10 +1192,10 @@ reference level is the lefthand level.
 vars.mort.3yr <- unique(gsub("'+|=.+$", "", names(mod.mort.3yr$coefficients)))
 
 hrs.mort.3yr <- bind_rows(lapply(vars.mort.3yr,
-                                 FUN = calcComparisonsRMS,
-                                 model.obj = mod.mort.3yr,
-                                 get.ratios = TRUE,
-                                 data.set = summary.mort.3yr))
+                                 FUN = rms_calc_comparisons,
+                                 rmsObj = mod.mort.3yr,
+                                 getRatios = TRUE,
+                                 df = summary.mort.3yr))
 
 ## -- Add variable *labels* ------------------------------------------------------------------------
 hrs.mort.3yr.labels <- as.data.frame(do.call(rbind,
@@ -1159,7 +1205,7 @@ hrs.mort.3yr.labels <- as.data.frame(do.call(rbind,
                                              })))
 hrs.mort.3yr <- hrs.mort.3yr %>%
   left_join(hrs.mort.3yr.labels, by = 'variable') %>%
-  left_join(select(results.mort.3yr, Covariate, P),
+  left_join(dplyr::select(results.mort.3yr, Covariate, P),
             by = c("varlabel" = "Covariate"))
 
 ## -- Create properly ordered factor levels --------------------------------------------------------
@@ -1171,7 +1217,7 @@ hrs.mort.3yr.flevels <-
   mutate(level.num = as.numeric(as.character(comp.c)),
          is.ref.factor = ifelse(!is.na(level.num), FALSE, is.ref)) %>%
   ## Only need original, new reference indicator, and numeric
-  select(comp.c, is.ref.factor, level.num) %>%
+  dplyr::select(comp.c, is.ref.factor, level.num) %>%
   ## Take only unique: no need for multiple 0 levels, for example
   unique() %>%
   ## Sort all possible levels by 1. numeric values in order, 2. all reference levels,
@@ -1182,7 +1228,7 @@ hrs.mort.3yr.flevels <-
 
 ## Merge numeric values onto original data set, create final factor variable
 hrs.mort.3yr <- hrs.mort.3yr %>%
-  left_join(select(hrs.mort.3yr.flevels, comp.c, flevel.num),
+  left_join(dplyr::select(hrs.mort.3yr.flevels, comp.c, flevel.num),
             by = c('comp.c')) %>%
   mutate(flevel = factor(flevel.num, labels = hrs.mort.3yr.flevels$comp.c),
          varlabel.p = paste0(varlabel, '; P: ', P))
@@ -1217,6 +1263,9 @@ gg.mort.3yr %>%
 ```
 
 # Software Details
+
+---
+
 `r devtools::session_info()$platform$version` was used for all analyses. `r table_nums('package_info', display = 'cite')` shows all add-on packages loaded.
 
 ```{r technical, results = 'asis'}
