@@ -475,6 +475,8 @@ dcfd.data <- daily.data %>%
                    '13', '14'))) %>%
   group_by(mrn) %>%
   summarise(days.mental.14 = sum(!is.na(mental.status)),
+            days.del.14 = ifelse(days.mental.14 == 0, NA,
+                                 sum(mental.status == 'Delirious', na.rm = TRUE)),
             dcfd.14 = ifelse(days.mental.14 == 0, NA,
                              14 - sum(mental.status %in% c('Delirious', 'Comatose'),
                                       na.rm = TRUE)))
@@ -500,7 +502,7 @@ tbi.oneobs <- subset(demog.data.trimmed,
                                 time.death.3yr.dc, time.death.ever.dc)) %>%
   left_join(day00.data, by = 'mrn') %>%
   left_join(mental.vars, by = 'mrn') %>%
-  left_join(select(dcfd.data, mrn, dcfd.14), by = 'mrn') %>%
+  left_join(select(dcfd.data, mrn, days.del.14, dcfd.14), by = 'mrn') %>%
   filter(!is.na(age)) %>%
   ## If baseline motor score is still missing after imputation, assume score of 6
   mutate(base.motor.imp = ifelse(is.na(base.motor.imp), 6, base.motor.imp))
@@ -546,6 +548,7 @@ label(tbi.oneobs$n.recs) <- 'Number of daily records'
 label(tbi.oneobs$days.mental) <- 'Days with mental status info'
 label(tbi.oneobs$days.del) <- 'Days of delirium'
 label(tbi.oneobs$days.coma) <- 'Days of coma'
+label(tbi.oneobs$days.del.14) <- 'Days of delirium within 14 days of admission'
 label(tbi.oneobs$dcfd.14) <- 'DCFDs within 14 days of admission'
 
 tbi.daily.org <- subset(daily.data,
