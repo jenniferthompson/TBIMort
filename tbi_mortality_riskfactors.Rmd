@@ -45,6 +45,8 @@ library(rms)
 library(plotly)
 library(viridis)
 library(mice)
+library(htmltools)
+library(metricsgraphics)
 
 ## Home directory (if on Mac, assumes connected to desktop via Samba)
 if(Sys.info()['sysname'] == 'Darwin'){
@@ -104,6 +106,8 @@ table_nums(name = 'mort_3yr_missing_baseline',
 table_nums(name = 'mort_3yr_missing_daily',
            caption = 'Patient-Days Requiring Imputation for Three-Year Mortality Model')
 table_nums(name = 'mort_3yr_results', caption = 'Model Results Summary, Three-Year Mortality')
+table_nums("delsummary_missing",
+           caption = "Missingness Among Baseline Covariates and Delirium Summary Outcomes")
 
 table_nums(name = 'package_info', caption = 'R Packages Loaded')
 
@@ -1259,6 +1263,67 @@ gg.mort.3yr <- ggplot(data = hrs.mort.3yr,
 ```{r print_mort_3yr_figures, results = 'asis', fig.width=12, fig.height=95}
 gg.mort.3yr %>%
   ggplotly(tooltip = c("x", "label", "y", "ymin", "ymax"))
+
+```
+
+# Delirium Summary Outcomes
+
+---
+
+The following models examine the relationships between a) delirium duration and b)
+delirium/coma-free days during the 14 days following hospital admission vs baseline/day of admission
+risk factors.
+
+## Model Covariates
+
+Both models will include the following covariates:
+
+- Age at admission
+- Gender *(`r paste(levels(tbi.oneobs.icu$gender), collapse = '; ')`)*
+- Insurance type *(`r paste(levels(tbi.oneobs.icu$insurance.code), collapse = '; ')`)*
+- Marshall Class equivalent *(`r paste(levels(tbi.oneobs.icu$marshall.comb), collapse = '; ')`)*
+- Cerebral subarachnoid hemorrhage (SAH) *(`r paste(levels(tbi.oneobs.icu$pt.cerebral.na), collapse = '; ')`)*
+- Injurity Severity Score (ISS)
+- CPR *(`r paste(levels(tbi.oneobs.icu$cpr.yn), collapse = '; ')`)*
+- Maximum motor score, day 0
+- Pupil reactivity, day 0 *(`r paste(levels(tbi.oneobs.icu$base.pupil.react.imp), collapse = '; ')`)*
+- Minimum glucose, day 0
+- Minimum hemoglobin, day 0
+
+## Patient Inclusion and Missing Data
+
+```{r delsummary_missing}
+## -- List of baseline and day 1 covariates to include in models for delirium duration, DCFDs ------
+delsummary.covars <- c(mortality.baseline.covars, 'base.motor.imp', 'base.pupil.react',
+                       'base.glucose.imp', 'base.hemoglobin.imp')
+
+## -- How many patients are missing each covariate and outcome? ------------------------------------
+## How many are missing at least one covariate/outcome?
+n.delsummary.missany <-
+  sum(rowSums(is.na(tbi.oneobs.icu[,c(delsummary.covars, 'days.del.14', 'dcfd.14')])) > 0)
+
+delsummary.missing <-
+  as.data.frame(do.call(rbind,
+                        lapply(c(delsummary.covars, 'days.del.14', 'dcfd.14'),
+                               FUN = function(vname){
+                                 nmiss <- sum(is.na(tbi.oneobs.icu[,vname]))
+                                 pctall.miss <- round((nmiss / n.included.main)*100, 2)
+                                 c(nmiss, pctall.miss)
+                               })))
+delsummary.missing <- cbind(c(delsummary.covars, 'days.del.14', 'dcfd.14'), delsummary.missing)
+names(delsummary.missing) <- c('Variable', 'N Missing Covariate', '% Eligible Patients')
+delsummary.missing <- delsummary.missing[delsummary.missing[,2] > 0,]
+rownames(delsummary.missing) <- NULL
+
+```
+
+All `r format(n.included.main, big.mark = ',')` patients in the main cohort will be
+included in both models; `r n.delsummary.missany` of these (`r round((n.delsummary.missany / n.included.main)*100)`%) are missing one or more baseline covariates and/or delirium summary
+outcomes. `r table_nums("delsummary_missing", display = 'cite')` details how many patients in our cohort are missing which covariates or outcomes. This missingness will be handled with multiple imputation.
+
+#### `r table_nums("delsummary_missing")`
+```{r print_delsummary_missing, results = 'asis'}
+pandoc.table(delsummary.missing, justify = c('left', 'right', 'right'))
 
 ```
 
