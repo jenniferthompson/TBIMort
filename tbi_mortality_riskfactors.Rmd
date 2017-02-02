@@ -1327,6 +1327,121 @@ pandoc.table(delsummary.missing, justify = c('left', 'right', 'right'))
 
 ```
 
+Delirium outcome and baseline variables will be imputed as follows (similar to our approach for the
+three-year mortality model, but with some differences):
+
+1. Create multiply imputed longitudinal data sets (one record per in-hospital day, up to 14 days)
+1. Calculate summary statistics (eg, days of delirium) for each patient in data set, separately;
+this allows us to use data from days which did have a mental status recorded, but impute for days
+which did not
+1. Combine original baseline values, present and missing, with these data sets with imputed outcome
+values
+1. Impute missing baseline values using other baseline covariates and imputed delirium summary
+outcomes
+1. Use these imputed data sets to run final models
+
+```{r delsummary_datamgmt}
+## -- Create data sets for delirium summary models -------------------------------------------------
+## Baseline/day 0 information
+base.delsummary <- tbi.oneobs.icu %>%
+  dplyr::select(mrn, one_of(delsummary.covars), days.del.14, dcfd.14)
+
+## Daily data, for imputing delirium duration/DCFDs
+daily.delsummary.org <- tbi.daily.icu %>%
+  filter(event %in% paste('Inpatient Day',
+                          c('01', '02', '03', '04', '05', '06', '07', '08', '09', 10:14))) %>%
+  dplyr::select(mrn, study.day, max.motor.imp, pupil.react.imp, min.glucose.imp, min.hemoglobin.imp,
+                min.sodium.imp, mental.status, sofa.mod.nanormal.imp, max.icp.dich, tot.opioid,
+                tot.benzo, tot.antipsyc, tot.betablock, tot.propofol, tot.clonid, any.dex,
+                any.prbc, any.plasmaplt)
+
+## Combine baseline and daily variables to prep for daily mental status imputation
+basedaily.delsummary <- left_join(dplyr::select(base.delsummary, -days.del.14, -dcfd.14),
+                                  daily.delsummary.org, by = 'mrn')
+
+## Impute daily values
+mice.delsummary.daily <- mice(basedaily.delsummary[,-1], visitSequence = 'monotone')
+
+## Create long data frame of original data + all imputed data sets
+complete.delsummary.daily <- complete(mice.delsummary.daily, action = 'long', include = TRUE)
+
+## Add MRN and calculate summary statistics by imputation, patient
+summary.delsummary <- complete.delsummary.daily %>%
+  ## Do not include original data for now - calculating days.del.14/dcfd.14 won't work the same way
+  ## because there's no days.mental
+  filter(.imp %in% 1:99) %>%
+  mutate(mrn = rep(basedaily.delsummary$mrn, length(unique(complete.delsummary.daily$.imp)) - 1)) %>%
+  group_by(.imp, mrn) %>%
+  summarise(days.del.14 = sum(mental.status == 'Delirious', na.rm = TRUE),
+            dcfd.14 = 14 - sum(mental.status %in% c('Delirious', 'Comatose'), na.rm = TRUE)) %>%
+  as.data.frame()
+
+## Add original data - need to add .imp first
+delsummary.org <- cbind(factor(rep(0, nrow(base.delsummary))),
+                        subset(base.delsummary, select = c(mrn, days.del.14, dcfd.14)))
+names(delsummary.org)[1] <- '.imp'
+
+summary.delsummary <- bind_rows(delsummary.org, summary.delsummary)
+
+## Impute baseline variables, using original delirium duration/DCFDs if available
+mice.delsummary.base <- mice(base.delsummary[,-1], visitSequence = 'monotone')
+complete.delsummary.base <- complete(mice.delsummary.base, action = 'long', include = TRUE)
+
+## Replace versions of delirium outcomes which were imputed *ignoring* partial data with those
+## imputed *using* partial data where available
+complete.delsummary.base$mrn <- rep(base.delsummary$mrn,
+                                    length(unique(complete.delsummary.base$.imp)))
+
+complete.delsummary <- left_join(dplyr::select(complete.delsummary.base, -days.del.14, -dcfd.14),
+                                 summary.delsummary,
+                                 by = c('.imp', 'mrn')) %>%
+  dplyr::select(-.id) %>%
+  mutate(.imp = factor(.imp))
+
+## Put complete.delsummary back into mids format to use with mice
+mids.delsummary <- as.mids.update(complete.delsummary, .imp = 1, .id = NULL)
+
+## Set datadist
+dd.delsummary <- datadist(tbi.oneobs.icu, adjto.cat = 'first')
+options(datadist = 'dd.delsummary')
+
+```
+
+## Redundancy Analysis
+To see if any of the covariates in our delirium summary models are nearly fully explained by the
+others, we performed a redundancy analysis. Adjusted R^2^ values for each covariate are shown below.
+
+```{r delsummary_redun, results = 'markup'}
+redun.delsummary <- redun(as.formula(paste('~', paste(delsummary.covars, collapse = ' + '))),
+                          data = tbi.oneobs.icu, type = 'adjusted', nk = 4, allcat = TRUE)
+
+highr2.delsummary <- which.max(redun.delsummary$rsq1)
+
+round(redun.delsummary$rsq1, 2)
+
+```
+
+The highest adjusted R^2^ value is `r round(redun.delsummary$rsq1[highr2.delsummary], 2)` (`r names(redun.delsummary$rsq1[highr2.delsummary])`), indicating that there are no redundant variables.
+All covariates will be included as specified above.
+
+## Delirium Duration
+
+The distribution of delirium duration over the first 14 days, shown below, follows a negative
+binomial distribution; therefore, we will use a negative binomial model with multiple imputation to
+look for relationships between it and baseline risk factors.
+
+```{r del_duration_histogram, results = 'asis'}
+mjs_plot(tbi.oneobs.icu$days.del.14,
+         title = '14-Day Delirium Duration',
+         description = 'Histogram of delirium duration within 14 days of hospital admission. Each bar = delirium duration; bar height = counts of patients with that many days of delirium.',
+         decimals = 0,
+         width = 750, height = 400) %>%
+  mjs_histogram(bins = 15) %>%
+  mjs_labs(x_label = 'Days of delirium within 14 days of admission',
+           y_label = 'Count')
+
+```
+
 # Software Details
 
 ---
