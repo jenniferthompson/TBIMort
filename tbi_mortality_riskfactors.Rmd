@@ -108,6 +108,7 @@ table_nums(name = 'mort_3yr_missing_daily',
 table_nums(name = 'mort_3yr_results', caption = 'Model Results Summary, Three-Year Mortality')
 table_nums("delsummary_missing",
            caption = "Missingness Among Baseline Covariates and Delirium Summary Outcomes")
+table_nums(name = 'deldays_results', caption = 'Model Results Summary, Delirium Duration')
 
 table_nums(name = 'package_info', caption = 'R Packages Loaded')
 
@@ -925,7 +926,7 @@ basedaily.mort.3yr <- left_join(base.mort.3yr, daily.mort.3yr.org, by = 'mrn')
 mice.mort.3yr <- mice(basedaily.mort.3yr[,-1], visitSequence = 'monotone')
 
 ## Calculate summary statistics by imputation
-complete.mort.3yr <- complete(mice.mort.3yr, action = 'long', include = TRUE)
+complete.mort.3yr <- mice::complete(mice.mort.3yr, action = 'long', include = TRUE)
 
 summary.mort.3yr <- complete.mort.3yr %>%
   mutate(mrn = rep(basedaily.mort.3yr$mrn, length(unique(complete.mort.3yr$.imp)))) %>%
@@ -1173,7 +1174,7 @@ outcome, hazard ratios are only valid for the comparisons listed: For continuous
 ```{r mort_3yr_results}
 results.mort.3yr <- rms_model_results(mod.mort.3yr,
                                       labeldf = summary.mort.3yr,
-                                      printFormat = 'plain')
+                                      printFormat = 'markdown')
 names(results.mort.3yr) <- cph.results.headers
 
 ```
@@ -1363,7 +1364,7 @@ basedaily.delsummary <- left_join(dplyr::select(base.delsummary, -days.del.14, -
 mice.delsummary.daily <- mice(basedaily.delsummary[,-1], visitSequence = 'monotone')
 
 ## Create long data frame of original data + all imputed data sets
-complete.delsummary.daily <- complete(mice.delsummary.daily, action = 'long', include = TRUE)
+complete.delsummary.daily <- mice::complete(mice.delsummary.daily, action = 'long', include = TRUE)
 
 ## Add MRN and calculate summary statistics by imputation, patient
 summary.delsummary <- complete.delsummary.daily %>%
@@ -1385,7 +1386,7 @@ summary.delsummary <- bind_rows(delsummary.org, summary.delsummary)
 
 ## Impute baseline variables, using original delirium duration/DCFDs if available
 mice.delsummary.base <- mice(base.delsummary[,-1], visitSequence = 'monotone')
-complete.delsummary.base <- complete(mice.delsummary.base, action = 'long', include = TRUE)
+complete.delsummary.base <- mice::complete(mice.delsummary.base, action = 'long', include = TRUE)
 
 ## Replace versions of delirium outcomes which were imputed *ignoring* partial data with those
 ## imputed *using* partial data where available
@@ -1441,6 +1442,143 @@ mjs_plot(tbi.oneobs.icu$days.del.14,
            y_label = 'Count')
 
 ```
+
+```{r deldays_fitmod}
+## -- Named vector of model covariates for delirium summary outcomes -------------------------------
+delsummary.rhvars <- c("age" = "rcs(age, 3)", "gender" = "gender",
+                       "insurance.code" = "insurance.code", "marshall.comb" = "marshall.comb",
+                       "pt.cerebral.na" = "pt.cerebral.na", "iss" = "rcs(iss, 3)",
+                       "cpr.yn" = "cpr.yn", "base.motor.imp" = "base.motor.imp",
+                       "base.pupil.react" = "base.pupil.react",
+                       "base.glucose.imp" = "rcs(base.glucose.imp, 3)",
+                       "base.hemoglobin.imp" = "rcs(base.hemoglobin.imp, 3)")
+
+## -- Fit models for delirium duration -------------------------------------------------------------
+mod.deldays <- with(mids.delsummary, glm.nb(days.del.14 ~ rcs(age, 3) + gender + insurance.code +
+                                              marshall.comb + pt.cerebral.na + rcs(iss, 3) + cpr.yn +
+                                              base.motor.imp + base.pupil.react +
+                                              rcs(base.glucose.imp, 3) +
+                                              rcs(base.hemoglobin.imp, 3)))
+
+```
+
+```{r deldays_results}
+## -- Get likelihood ratio test info for each term -------------------------------------------------
+## Function to flatten lists returned by lrtest_removeTerm() into data.frame with variable name
+## included
+get_lrtests_deldays <- function(rhvar){
+  ## Perform LR test and extract df, X2, and p-value
+  lrInfo <- lrtest_removeTerm(orgModel = mod.deldays,
+                              removeTerm = delsummary.rhvars[rhvar],
+                              miceObjName = 'mids.delsummary')
+  
+  ## Turn results into a data.frame with variable name added
+  tmp <- flatten_dbl(lrInfo) %>%
+    t() %>%
+    as.data.frame() %>%
+    cbind(rhvar, .)
+  
+  ## Set names
+  names(tmp) <- c('covariate', names(lrInfo))
+  
+  tmp
+}
+
+lrtests.deldays <- map(names(delsummary.rhvars), get_lrtests_deldays) %>% bind_rows()
+
+## -- Get IRRs, CIs for each term ------------------------------------------------------------------
+## Use calc_nb_ratioci, but turn into data.frame and add variable name to make combining easier
+get_irrci_deldays <- function(rhvar){
+  tmp <- calc_nb_ratioci(nbObj = mod.deldays, predVar = rhvar, df = tbi.oneobs.icu) %>%
+    as.data.frame()
+  tmp <- cbind('covariate' = rep(rhvar, nrow(tmp)),
+               tmp)
+
+  ## Character versions of ref.val, comp.val:
+  ## If covariate is a factor, replace ref.val and comp.val with appropriate levels; otherwise,
+  ## just character versions of numerics
+  if(inherits(tbi.oneobs.icu[,rhvar], 'factor')){
+    tmp$ref.val.c <- levels(tbi.oneobs.icu[,rhvar])[tmp$ref.val]
+    tmp$comp.val.c <- levels(tbi.oneobs.icu[,rhvar])[tmp$comp.val]
+  } else{
+    tmp$ref.val.c <- as.character(round(tmp$ref.val, 2))
+    tmp$comp.val.c <- as.character(round(tmp$comp.val, 2))
+  }
+  
+  tmp
+}
+
+irrs.deldays <- map(names(delsummary.rhvars), get_irrci_deldays) %>%
+  bind_rows() %>%
+  group_by(covariate) %>%
+  mutate(irr.ci =
+           paste0(rndformat(pointest, 2), ' (', rndformat(lcl, 2), ', ', rndformat(ucl, 2), ')'),
+         covarRow = 1:n()) %>%
+  ungroup()
+
+irrs.deldays$varLabel <- map_chr(irrs.deldays$covariate, ~label(tbi.oneobs.icu[,.]))
+
+## -- Create a row that describes the group test for all nonlinear terms ---------------------------
+## -- Actually, this would be a pain; we'd have to create all the NL terms by hand; let's wait -----
+## -- and see if someone asks for it ---------------------------------------------------------------
+
+## -- P-value, LR for overall model ----------------------------------------------------------------
+## Fit intercept-only model
+mod.deldays.null <- with(mids.delsummary, glm.nb(days.del.14 ~ 1))
+
+lrtest.deldays.overall <-
+  pool.compare(mod.deldays, mod.deldays.null, data = mids.delsummary, method = 'likelihood')
+lrtest.deldays.overall.df <- data.frame(varLabel = '***Overall Model***',
+                                        ref.val.c = '',
+                                        comp.val.c = '',
+                                        irr.ci = '',
+                                        df = lrtest.deldays.overall$df1,
+                                        Chisq = rndformat(lrtest.deldays.overall$Dm, 2),
+                                        P = formatp(lrtest.deldays.overall$pvalue))
+
+## -- Combine IRRs, LR results; add stats for overall model -----------------------------------------
+blankRow <- data.frame(varLabel = "", ref.val.c = "", comp.val.c = "", irr.ci = "",
+                       df = NA, Chisq = "", P = "")
+
+modstats.deldays <- data.frame(varLabel = c("*Observations*"),
+                               ref.val.c = format(nrow(mids.delsummary$data), big.mark = ','))
+
+results.deldays <- irrs.deldays %>%
+  left_join(lrtests.deldays, by = 'covariate') %>%
+  mutate(varLabel = ifelse(covarRow > 1, "", varLabel),
+         Chisq = ifelse(covarRow > 1, "", rndformat(chisq, 2)),
+         P = ifelse(covarRow > 1, "", formatp(pvalue))) %>%
+  dplyr::select(varLabel, ref.val.c, comp.val.c, irr.ci, df, Chisq, P) %>%
+  bind_rows(lrtest.deldays.overall.df) %>%
+  bind_rows(blankRow) %>%
+  bind_rows(modstats.deldays)
+
+names(results.deldays) <-
+  c('Covariate', 'Reference', 'Comparison', 'IRR (95% CI)', 'Chi-square', 'df', 'P')
+
+```
+
+### Model Results
+`r table_nums('deldays_results', display = 'cite')` presents a summary of results from the
+delirium duration model. Incidence rate ratios indicate a comparison between the "comparison" vs the "reference" columns, holding all other covariates at the median or reference category. For example,
+a patient who was `r as.numeric(round(irrs.deldays[1, 'comp.val'], 2))` years old at the time of
+injury has about `r as.numeric(round(irrs.deldays[1, 'pointest'], 2))` times the number of delirium
+days within the first 14 days after admission as a patient who was `r as.numeric(round(irrs.deldays[1, 'ref.val'], 2))` years old, assuming all other covariates are
+equal. The reference and comparison values for continuous variables are the 25th and 75th
+percentiles, respectively.
+
+**Please note** that while p-values reflect the entire association of each covariate with our
+outcome, incidence rate ratios are only valid for the comparisons listed: For continuous covariates which are allowed to have a nonlinear association with delirium duration, the incidence rate ratios
+depend on the two values we choose; for categorical covariates with more than two categories, the ratios depend on the reference level chosen.
+
+#### `r table_nums('deldays_results')`
+
+```{r print_deldays_results, results = 'asis'}
+pandoc.table(results.deldays, justify = 'lrrrrrr', style = 'rmarkdown',
+             split.tables = 800, missing = "")
+
+```
+
 
 # Software Details
 
