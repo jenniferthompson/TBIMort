@@ -119,6 +119,7 @@ figure_nums(name = 'mort_inhosp_zph', 'Proportional Hazards Assumption, In-Hospi
 figure_nums(name = 'mort_inhosp_figures', 'Hazard Ratios and 95% CIs, In-Hospital Mortality')
 figure_nums(name = 'mort_3yr_zph', 'Proportional Hazards Assumption, Three-Year Mortality')
 figure_nums(name = 'mort_3yr_figures', 'Hazard Ratios and 95% CIs, Three-Year Mortality')
+figure_nums(name = 'deldays_figures', 'Adjusted Counts and 95% CIs, Delirium Days')
 
 ## -- Load analysis data sets, additional data management ------------------------------------------
 load('AnalysisData/tbi_datasets.Rdata')
@@ -1576,6 +1577,166 @@ depend on the two values we choose; for categorical covariates with more than tw
 ```{r print_deldays_results, results = 'asis'}
 pandoc.table(results.deldays, justify = 'lrrrrrr', style = 'rmarkdown',
              split.tables = 800, missing = "")
+
+```
+
+#### `r figure_nums('deldays_figures')`
+
+We present the number of delirium days within 14 days of admission for each level of each covariate,
+adjusted to the median or reference level of all other covariates (our best "typical" value).
+
+```{r deldays_figures_prep}
+## -- Create a "baseline" design matrix, adjusted to the median or reference of every covariate ----
+## What are rcspline.eval() values for medians of continuous covariates?
+get_deldays_median <- function(x){ median(tbi.oneobs.icu[,x], na.rm = TRUE) }
+get_deldays_medspline <- function(x){
+  knot.locs <- rcspline.eval(tbi.oneobs.icu[,x], nk = 3, knots.only = TRUE)
+  x.med <- median(tbi.oneobs.icu[,x], na.rm = TRUE)
+  as.numeric(rcspline.eval(x.med, knots = knot.locs))
+}
+
+deldays.defaults <- c(1,                                                       ## Intercept
+                      get_deldays_median('age'), get_deldays_medspline('age'), ## Age
+                      0,                                                       ## Gender
+                      0, 0, 0,                                                 ## Insurance.code
+                      0, 0, 0,                                                 ## marshall.comb
+                      0,                                                       ## pt.cerebral.na
+                      get_deldays_median('iss'), get_deldays_medspline('iss'), ## iss
+                      0,                                                       ## cpr.yn
+                      get_deldays_median('base.motor.imp'),                    ## base.motor.imp
+                      0, 0,                                                    ## base.pupil.react
+                      get_deldays_median('base.glucose.imp'),                  ## base.glucose.imp
+                      get_deldays_medspline('base.glucose.imp'),
+                      get_deldays_median('base.hemoglobin.imp'),               ## base.hemoglobin.imp
+                      get_deldays_medspline('base.hemoglobin.imp'))
+names(deldays.defaults) <- names(pool(mod.deldays)$qbar)
+
+## -- For each covariate, get unique values that we want to adjust to for figures, then create -----
+## -- design matrix (nrow = # unique values) that is the same for all other covariates -------------
+create_deldays_designmatrix <- function(varName,
+                                        xQuantLimits = c(0.05, 0.95),
+                                        ## for continuous covariates, how much of the original data
+                                        ##  should be included?
+                                        defaultVals = deldays.defaults,
+                                          ## vector of default values for all coefficients
+                                        df = tbi.oneobs.icu){ ## data frame to use for unique values
+  
+  ## Which coefficients is this variable involved in?
+  varInCoefs <- grep(varName, gsub('rcs\\(.*\\)', '', gsub('[0-9]+$', '', names(defaultVals))))
+  
+  ## For continuous covariates
+  if(inherits(df[,varName], c('numeric', 'integer'))){
+    ## Get all unique numeric values
+    xVals <- sort(unique(df[,varName]))
+    
+    ## If >20 unique values, restrict to quantiles given
+    if(length(xVals) > 20){
+      xQuants <- quantile(df[,varName], na.rm = TRUE, probs = xQuantLimits)
+      xVals <- xVals[xVals >= xQuants[1] & xVals <= xQuants[2]]
+    }
+    
+    ## If variable is nonlinear, get values for additional columns
+    if(length(varInCoefs) > 1){
+      ## How many terms are there?
+      nNLTerms <- length(grep(paste0(varName, "'{1,99}$"), names(deldays.defaults)))
+      
+      ## Where are the knots? (uses rcspline.eval and defaults only)
+      xKnots <- rcspline.eval(df[,varName], nk = nNLTerms + 2, knots.only = TRUE)
+      
+      ## Get all covariate values, including original and spline values
+      xVals <- rcspline.eval(xVals, knots = xKnots, inclx = TRUE)
+    } else{
+      ## If variable is linear, put xVals in a matrix with a single column
+      xVals <- matrix(xVals, ncol = 1)
+    }
+    
+    ## Also return first column of xVals - could be used for X axis values in figure of
+    ## predicted values, eg
+    xValues <- xVals[,1]
+  } else{
+    ## Eventual need: matrix with one row for reference (all coefficients = 0) and one row for each
+    ## other category (one coefficient = 1)
+    ## Start with square matrix of all 0s
+    xVals <- matrix(0, ncol = length(varInCoefs) + 1, nrow = length(varInCoefs) + 1)
+    
+    ## Set diagonals = 1
+    diag(xVals) <- 1
+    
+    ## Don't need first column; reference value has no coefficient in model
+    xVals <- matrix(xVals[,2:ncol(xVals)], ncol = length(varInCoefs))
+    
+    ## Also return 1:nrow(xVals) - could be matched with levels of varName in figure of
+    ## predicted values
+    xValues <- 1:nrow(xVals)
+  }
+  
+  ## Add colnames to xVals so that it matches needed columns in defaultVals
+  colnames(xVals) <- names(defaultVals)[varInCoefs]
+  
+  tmp <- matrix(rep(defaultVals, nrow(xVals)), ncol = length(defaultVals), byrow = TRUE)
+  colnames(tmp) <- names(defaultVals)
+  for(i in 1:ncol(xVals)){
+    tmp[,colnames(xVals)[i]] <- xVals[,i]
+  }
+  
+  ## Return final design matrix
+  return(list('varName' = varName, 'xLevels' = xValues, 'dmat' = tmp))
+}
+
+deldays.designmats <- map(names(delsummary.rhvars), create_deldays_designmatrix)
+
+deldays.predcoefs <- names(pool(mod.deldays)$qbar)
+deldays.predcoefs <- deldays.predcoefs[grep("\\(Intercept\\)|'+$", deldays.predcoefs, invert = TRUE)]
+
+## -- Function to get data.frame of predicted counts and add x values ------------------------------
+get_deldays_predvals <- function(dmatObj){
+  tmp <- calc_nb_counts(nbObj = mod.deldays, designMatrix = dmatObj$dmat)
+  tmp <- cbind(dmatObj$xLevels, tmp)
+  names(tmp)[1] <- dmatObj$varName
+  tmp
+}
+
+## -- Get list of data.frames with predicted counts for each covariate -----------------------------
+deldays.predvals <- map(deldays.designmats, get_deldays_predvals)
+names(deldays.predvals) <- names(delsummary.rhvars)
+
+```
+
+```{r deldays_figures}
+## -- Function to create a plot for each data.frame: errorbars for plots with <=10 rows, -----------
+## -- lines + ribbons for continuous ---------------------------------------------------------------
+max.y <- max(bind_rows(deldays.predvals)$count.ucl)
+
+create_deldays_figures <- function(df){
+  ## Get variable label for plot title
+  varLabel <- label(tbi.oneobs.icu[,names(df)[1]])
+  
+  ## If <=10 rows in df, plot using points and errorbars
+  if(nrow(df) <= 10){
+    p <- ggplot(data = df, aes_string(x = names(df)[1], y = 'count.pe')) +
+      geom_errorbar(aes(ymin = count.lcl, ymax = count.ucl),
+                    width = 0, alpha = 0.5, colour = "#003D79") +
+      geom_point(colour = "#003D79") +
+      scale_x_continuous(name = NULL,
+                         limits = c(0.5, max(df[,1]) + 0.5),
+                         breaks = df[,1],
+                         labels = levels(tbi.oneobs.icu[,names(df)[1]]))
+  } else{
+    p <- ggplot(data = df, aes_string(x = names(df)[1], y = 'count.pe')) +
+      geom_ribbon(aes(ymin = count.lcl, ymax = count.ucl), alpha = 0.4, fill = "#003D79") +
+      geom_line(colour = "#003D79")
+  }
+  p +
+    ggtitle(varLabel) +
+    scale_y_continuous(name = 'Adjusted Days of Delirium',
+                       limits = c(0, ceiling(max.y)),
+                       breaks = seq(0, ceiling(max.y), 1)) +
+    theme_minimal() +
+    theme(panel.border = element_rect(fill = NA, colour = "grey92"))
+}
+
+deldays.plots <- map(deldays.predvals, create_deldays_figures)
+multiplot(deldays.plots, layout = matrix(1:length(deldays.plots), ncol = 1))
 
 ```
 
