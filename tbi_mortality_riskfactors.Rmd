@@ -805,7 +805,13 @@ hrs.mort.inhosp <- hrs.mort.inhosp %>%
   left_join(dplyr::select(hrs.mort.inhosp.flevels, comp.c, flevel.num),
             by = c('comp.c')) %>%
   mutate(flevel = factor(flevel.num, labels = hrs.mort.inhosp.flevels$comp.c),
-         varlabel.p = paste0(varlabel, '; P: ', P))
+         varlabel.p = paste0(varlabel, '; P: ', P),
+         tipText = gsub('^ *', '',
+                        gsub('\\( +', '\\(',
+                             gsub('  +', ' ',
+                                  paste0(comp.c, ' vs ', ref.c, ': ',
+                                         rndformat(effect), ' (', rndformat(lcl), ', ',
+                                         rndformat(ucl), ')')))))
 
 ## -- Create a single faceted plot for all covariate HRs vs reference levels -----------------------
 ## Change column names to work better in tooltips
@@ -819,7 +825,7 @@ gg.mort.inhosp <- ggplot(data = hrs.mort.inhosp,
                          aes(x = Comparison, label = Reference, y = HR)) +
   facet_wrap(~ varlabel.p, ncol = 1, scales = 'free') +
   geom_hline(yintercept = 1, colour = 'grey90', size = 1.25) +
-  geom_pointrange(aes(ymin = Lower.CL, ymax = Upper.CL, colour = abs(log(HR)))) +
+  geom_pointrange(aes(ymin = Lower.CL, ymax = Upper.CL, colour = abs(log(HR)), text = tipText)) +
   scale_color_viridis(direction = -1, end = 0.9, name = 'Effect Size<br>(Log Scale)') +
   scale_x_discrete(name = '') +
   scale_y_continuous(name = ' <br>Hazard Ratios (95% Confidence Intervals), In-Hospital Mortality<br> ',
@@ -830,9 +836,9 @@ gg.mort.inhosp <- ggplot(data = hrs.mort.inhosp,
 
 ```
 
-```{r print_mort_inhosp_figures, results = 'asis', fig.width=10, fig.height=75}
+```{r print_mort_inhosp_figures, results = 'asis', fig.width=8.5, fig.height=75}
 gg.mort.inhosp %>%
-  ggplotly(tooltip = c("x", "label", "y", "ymin", "ymax"))
+  ggplotly(tooltip = c("text"))
 
 ```
 
@@ -1237,7 +1243,13 @@ hrs.mort.3yr <- hrs.mort.3yr %>%
   left_join(dplyr::select(hrs.mort.3yr.flevels, comp.c, flevel.num),
             by = c('comp.c')) %>%
   mutate(flevel = factor(flevel.num, labels = hrs.mort.3yr.flevels$comp.c),
-         varlabel.p = paste0(varlabel, '; P: ', P))
+         varlabel.p = paste0(varlabel, '; P: ', P),
+         tipText = gsub('^ *', '',
+                        gsub('\\( +', '\\(',
+                             gsub('  +', ' ',
+                                  paste0(comp.c, ' vs ', ref.c, ': ',
+                                         rndformat(effect), ' (', rndformat(lcl), ', ',
+                                         rndformat(ucl), ')')))))
 
 ## -- Create a single faceted plot for all covariate HRs vs reference levels -----------------------
 ## Change column names to work better in tooltips
@@ -1251,7 +1263,7 @@ gg.mort.3yr <- ggplot(data = hrs.mort.3yr,
                       aes(x = Comparison, label = Reference, y = HR)) +
   facet_wrap(~ varlabel.p, ncol = 1, scales = 'free') +
   geom_hline(yintercept = 1, colour = 'grey90', size = 1.25) +
-  geom_pointrange(aes(ymin = Lower.CL, ymax = Upper.CL, colour = abs(log(HR)))) +
+  geom_pointrange(aes(ymin = Lower.CL, ymax = Upper.CL, colour = abs(log(HR)), text = tipText)) +
   scale_color_viridis(direction = -1, end = 0.9, name = 'Effect Size<br>(Log Scale)') +
   scale_x_discrete(name = '') +
   scale_y_continuous(name = ' <br>Hazard Ratios (95% Confidence Intervals), Three-Year Mortality<br> ',
@@ -1262,9 +1274,9 @@ gg.mort.3yr <- ggplot(data = hrs.mort.3yr,
 
 ```
 
-```{r print_mort_3yr_figures, results = 'asis', fig.width=12, fig.height=95}
+```{r print_mort_3yr_figures, results = 'asis', fig.width=8.5, fig.height=95}
 gg.mort.3yr %>%
-  ggplotly(tooltip = c("x", "label", "y", "ymin", "ymax"))
+  ggplotly(tooltip = c("text"))
 
 ```
 
