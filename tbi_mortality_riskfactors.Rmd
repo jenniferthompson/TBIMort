@@ -1273,8 +1273,8 @@ gg.mort.3yr %>%
 ---
 
 The following models examine the relationships between a) delirium duration and b)
-delirium/coma-free days during the 14 days following hospital admission vs baseline/day of admission
-risk factors.
+delirium/coma-free days (DCFDs) during the 14 days following hospital admission vs baseline/day of
+admission risk factors. We will examine relationships with DCFDs among all `r format(n.included.main, big.mark = ',')` patients in our cohort; because relationships with delirium duration could be biased by mortality, we will only look at delirium duration among those `r format(length(pts.inc.survived), big.mark = ',')` in our cohort who survived their hospital stay.
 
 ## Model Covariates
 
@@ -1292,45 +1292,7 @@ Both models will include the following covariates:
 - Minimum glucose, day 0
 - Minimum hemoglobin, day 0
 
-## Patient Inclusion and Missing Data
-
-```{r delsummary_missing}
-## -- List of baseline and day 1 covariates to include in models for delirium duration, DCFDs ------
-delsummary.covars <- c(mortality.baseline.covars, 'base.motor.imp', 'base.pupil.react',
-                       'base.glucose.imp', 'base.hemoglobin.imp')
-
-## -- How many patients are missing each covariate and outcome? ------------------------------------
-## How many are missing at least one covariate/outcome?
-n.delsummary.missany <-
-  sum(rowSums(is.na(tbi.oneobs.icu[,c(delsummary.covars, 'days.del.14', 'dcfd.14')])) > 0)
-
-delsummary.missing <-
-  as.data.frame(do.call(rbind,
-                        lapply(c(delsummary.covars, 'days.del.14', 'dcfd.14'),
-                               FUN = function(vname){
-                                 nmiss <- sum(is.na(tbi.oneobs.icu[,vname]))
-                                 pctall.miss <- round((nmiss / n.included.main)*100, 2)
-                                 c(nmiss, pctall.miss)
-                               })))
-delsummary.missing <- cbind(c(delsummary.covars, 'days.del.14', 'dcfd.14'), delsummary.missing)
-names(delsummary.missing) <- c('Variable', 'N Missing Covariate', '% Eligible Patients')
-delsummary.missing <- delsummary.missing[delsummary.missing[,2] > 0,]
-rownames(delsummary.missing) <- NULL
-
-```
-
-All `r format(n.included.main, big.mark = ',')` patients in the main cohort will be
-included in both models; `r n.delsummary.missany` of these (`r round((n.delsummary.missany / n.included.main)*100)`%) are missing one or more baseline covariates and/or delirium summary
-outcomes. `r table_nums("delsummary_missing", display = 'cite')` details how many patients in our cohort are missing which covariates or outcomes. This missingness will be handled with multiple imputation.
-
-#### `r table_nums("delsummary_missing")`
-```{r print_delsummary_missing, results = 'asis'}
-pandoc.table(delsummary.missing, justify = c('left', 'right', 'right'))
-
-```
-
-Delirium outcome and baseline variables will be imputed as follows (similar to our approach for the
-three-year mortality model, but with some differences):
+Missing delirium summary outcome and baseline variables will be imputed as follows (similar to our approach for the three-year mortality model, but with some differences):
 
 1. Create multiply imputed longitudinal data sets (one record per in-hospital day, up to 14 days)
 1. Calculate summary statistics (eg, days of delirium) for each patient in data set, separately;
@@ -1342,99 +1304,143 @@ values
 outcomes
 1. Use these imputed data sets to run final models
 
-```{r delsummary_datamgmt}
-## -- Create data sets for delirium summary models -------------------------------------------------
+## Delirium Duration among Hospital Survivors
+### Patient Inclusion and Missing Data
+
+```{r deldays_missing}
+## -- List of baseline and day 1 covariates to include in models for delirium duration, DCFDs ------
+delsummary.covars <- c(mortality.baseline.covars, 'base.motor.imp', 'base.pupil.react',
+                       'base.glucose.imp', 'base.hemoglobin.imp')
+
+## -- Create data set of only hospital survivors to use for delirium duration model ----------------
+tbi.survivors <- subset(tbi.oneobs.icu, hosp.death == 'No')
+
+## -- How many patients are missing each covariate and outcome? ------------------------------------
+## How many are missing at least one covariate/outcome?
+n.deldays.missany <- sum(rowSums(is.na(tbi.survivors[,c(delsummary.covars, 'days.del.14')])) > 0)
+
+deldays.missing <-
+  as.data.frame(do.call(rbind,
+                        lapply(c(delsummary.covars, 'days.del.14'),
+                               FUN = function(vname){
+                                 nmiss <- sum(is.na(tbi.survivors[,vname]))
+                                 pctall.miss <- round((nmiss / length(pts.inc.survived))*100, 2)
+                                 c(nmiss, pctall.miss)
+                               })))
+deldays.missing <- cbind(c(delsummary.covars, 'days.del.14'), deldays.missing)
+names(deldays.missing) <- c('Variable', 'N Missing Covariate', '% Eligible Patients')
+deldays.missing <- deldays.missing[deldays.missing[,2] > 0,]
+rownames(deldays.missing) <- NULL
+
+```
+
+All `r format(length(pts.inc.survived), big.mark = ',')` patients in the main cohort will be
+included in our model for delirium duration; `r n.deldays.missany` of these (`r round((n.deldays.missany / length(pts.inc.survived))*100)`%) are missing one or more baseline covariates and/or delirium duration. `r table_nums("deldays_missing", display = 'cite')` details how many patients in our cohort are missing which covariates or outcome. This missingness will be
+handled with multiple imputation.
+
+#### `r table_nums("deldays_missing")`
+```{r print_deldays_missing, results = 'asis'}
+pandoc.table(deldays.missing, justify = c('left', 'right', 'right'))
+
+```
+
+```{r deldays_datamgmt}
+## -- Named vector of model covariates for delirium summary outcomes -------------------------------
+delsummary.rhvars <- c("age" = "rcs(age, 3)", "gender" = "gender",
+                       "insurance.code" = "insurance.code", "marshall.comb" = "marshall.comb",
+                       "pt.cerebral.na" = "pt.cerebral.na", "iss" = "rcs(iss, 3)",
+                       "cpr.yn" = "cpr.yn", "base.motor.imp" = "base.motor.imp",
+                       "base.pupil.react" = "base.pupil.react",
+                       "base.glucose.imp" = "rcs(base.glucose.imp, 3)",
+                       "base.hemoglobin.imp" = "rcs(base.hemoglobin.imp, 3)")
+
+## -- Create data sets for delirium duration models ------------------------------------------------
 ## Baseline/day 0 information
-base.delsummary <- tbi.oneobs.icu %>%
-  dplyr::select(mrn, one_of(delsummary.covars), days.del.14, dcfd.14)
+base.deldays <- tbi.survivors %>%
+  dplyr::select(mrn, one_of(delsummary.covars), days.del.14)
 
 ## Daily data, for imputing delirium duration/DCFDs
-daily.delsummary.org <- tbi.daily.icu %>%
+daily.deldays.org <- tbi.daily.icu %>%
   filter(event %in% paste('Inpatient Day',
-                          c('01', '02', '03', '04', '05', '06', '07', '08', '09', 10:14))) %>%
+                          c('01', '02', '03', '04', '05', '06', '07', '08', '09', 10:14)) &
+         mrn %in% tbi.survivors$mrn) %>%
   dplyr::select(mrn, study.day, max.motor.imp, pupil.react.imp, min.glucose.imp, min.hemoglobin.imp,
                 min.sodium.imp, mental.status, sofa.mod.nanormal.imp, max.icp.dich, tot.opioid,
                 tot.benzo, tot.antipsyc, tot.betablock, tot.propofol, tot.clonid, any.dex,
                 any.prbc, any.plasmaplt)
 
 ## Combine baseline and daily variables to prep for daily mental status imputation
-basedaily.delsummary <- left_join(dplyr::select(base.delsummary, -days.del.14, -dcfd.14),
-                                  daily.delsummary.org, by = 'mrn')
+basedaily.deldays <- left_join(dplyr::select(base.deldays, -days.del.14), daily.deldays.org,
+                               by = 'mrn')
 
 ## Impute daily values
-mice.delsummary.daily <- mice(basedaily.delsummary[,-1], visitSequence = 'monotone')
+mice.deldays.daily <- mice(basedaily.deldays[,-1], visitSequence = 'monotone')
 
 ## Create long data frame of original data + all imputed data sets
-complete.delsummary.daily <- mice::complete(mice.delsummary.daily, action = 'long', include = TRUE)
+complete.deldays.daily <- mice::complete(mice.deldays.daily, action = 'long', include = TRUE)
 
 ## Add MRN and calculate summary statistics by imputation, patient
-summary.delsummary <- complete.delsummary.daily %>%
+summary.deldays <- complete.deldays.daily %>%
   ## Do not include original data for now - calculating days.del.14/dcfd.14 won't work the same way
   ## because there's no days.mental
   filter(.imp %in% 1:99) %>%
-  mutate(mrn = rep(basedaily.delsummary$mrn, length(unique(complete.delsummary.daily$.imp)) - 1)) %>%
+  mutate(mrn = rep(basedaily.deldays$mrn, length(unique(complete.deldays.daily$.imp)) - 1)) %>%
   group_by(.imp, mrn) %>%
-  summarise(days.del.14 = sum(mental.status == 'Delirious', na.rm = TRUE),
-            dcfd.14 = 14 - sum(mental.status %in% c('Delirious', 'Comatose'), na.rm = TRUE)) %>%
+  summarise(days.del.14 = sum(mental.status == 'Delirious', na.rm = TRUE)) %>% #,
+            # dcfd.14 = 14 - sum(mental.status %in% c('Delirious', 'Comatose'), na.rm = TRUE)) %>%
   as.data.frame()
 
 ## Add original data - need to add .imp first
-delsummary.org <- cbind(factor(rep(0, nrow(base.delsummary))),
-                        subset(base.delsummary, select = c(mrn, days.del.14, dcfd.14)))
-names(delsummary.org)[1] <- '.imp'
+deldays.org <- cbind(factor(rep(0, nrow(base.deldays))),
+                     subset(base.deldays, select = c(mrn, days.del.14)))
+names(deldays.org)[1] <- '.imp'
 
-summary.delsummary <- bind_rows(delsummary.org, summary.delsummary)
+summary.deldays <- bind_rows(deldays.org, summary.deldays)
 
 ## Impute baseline variables, using original delirium duration/DCFDs if available
-mice.delsummary.base <- mice(base.delsummary[,-1], visitSequence = 'monotone')
-complete.delsummary.base <- mice::complete(mice.delsummary.base, action = 'long', include = TRUE)
+mice.deldays.base <- mice(base.deldays[,-1], visitSequence = 'monotone')
+complete.deldays.base <- mice::complete(mice.deldays.base, action = 'long', include = TRUE)
 
 ## Replace versions of delirium outcomes which were imputed *ignoring* partial data with those
 ## imputed *using* partial data where available
-complete.delsummary.base$mrn <- rep(base.delsummary$mrn,
-                                    length(unique(complete.delsummary.base$.imp)))
+complete.deldays.base$mrn <- rep(base.deldays$mrn, length(unique(complete.deldays.base$.imp)))
 
-complete.delsummary <- left_join(dplyr::select(complete.delsummary.base, -days.del.14, -dcfd.14),
-                                 summary.delsummary,
-                                 by = c('.imp', 'mrn')) %>%
+complete.deldays <- left_join(dplyr::select(complete.deldays.base, -days.del.14), summary.deldays,
+                              by = c('.imp', 'mrn')) %>%
   dplyr::select(-.id) %>%
   mutate(.imp = factor(.imp))
 
-## Put complete.delsummary back into mids format to use with mice
-mids.delsummary <- as.mids.update(complete.delsummary, .imp = 1, .id = NULL)
-
-## Set datadist
-dd.delsummary <- datadist(tbi.oneobs.icu, adjto.cat = 'first')
-options(datadist = 'dd.delsummary')
+## Put complete.deldays back into mids format to use with mice
+mids.deldays <- as.mids.update(complete.deldays, .imp = 1, .id = NULL)
 
 ```
 
-## Redundancy Analysis
+### Redundancy Analysis
 To see if any of the covariates in our delirium summary models are nearly fully explained by the
 others, we performed a redundancy analysis. Adjusted R^2^ values for each covariate are shown below.
 
-```{r delsummary_redun, results = 'markup'}
-redun.delsummary <- redun(as.formula(paste('~', paste(delsummary.covars, collapse = ' + '))),
-                          data = tbi.oneobs.icu, type = 'adjusted', nk = 4, allcat = TRUE)
+```{r deldays_redun, results = 'markup'}
+redun.deldays <- redun(as.formula(paste('~', paste(delsummary.covars, collapse = ' + '))),
+                       data = tbi.survivors, type = 'adjusted', nk = 4, allcat = TRUE)
 
-highr2.delsummary <- which.max(redun.delsummary$rsq1)
+highr2.deldays <- which.max(redun.deldays$rsq1)
 
-round(redun.delsummary$rsq1, 2)
+round(redun.deldays$rsq1, 2)
 
 ```
 
-The highest adjusted R^2^ value is `r round(redun.delsummary$rsq1[highr2.delsummary], 2)` (`r names(redun.delsummary$rsq1[highr2.delsummary])`), indicating that there are no redundant variables.
+The highest adjusted R^2^ value is `r round(redun.deldays$rsq1[highr2.deldays], 2)` (`r names(redun.deldays$rsq1[highr2.deldays])`), indicating that there are no redundant variables.
 All covariates will be included as specified above.
 
-## Delirium Duration
+### Model Choice
 
 The distribution of delirium duration over the first 14 days, shown below, follows a negative
 binomial distribution; therefore, we will use a negative binomial model with multiple imputation to
 look for relationships between it and baseline risk factors.
 
 ```{r del_duration_histogram, results = 'asis'}
-mjs_plot(tbi.oneobs.icu$days.del.14,
-         title = '14-Day Delirium Duration',
+mjs_plot(tbi.survivors$days.del.14,
+         title = '14-Day Delirium Duration among Hospital Survivors',
          description = 'Histogram of delirium duration within 14 days of hospital admission. Each bar = delirium duration; bar height = counts of patients with that many days of delirium.',
          decimals = 0,
          width = 750, height = 400) %>%
@@ -1445,21 +1451,12 @@ mjs_plot(tbi.oneobs.icu$days.del.14,
 ```
 
 ```{r deldays_fitmod}
-## -- Named vector of model covariates for delirium summary outcomes -------------------------------
-delsummary.rhvars <- c("age" = "rcs(age, 3)", "gender" = "gender",
-                       "insurance.code" = "insurance.code", "marshall.comb" = "marshall.comb",
-                       "pt.cerebral.na" = "pt.cerebral.na", "iss" = "rcs(iss, 3)",
-                       "cpr.yn" = "cpr.yn", "base.motor.imp" = "base.motor.imp",
-                       "base.pupil.react" = "base.pupil.react",
-                       "base.glucose.imp" = "rcs(base.glucose.imp, 3)",
-                       "base.hemoglobin.imp" = "rcs(base.hemoglobin.imp, 3)")
-
 ## -- Fit models for delirium duration -------------------------------------------------------------
-mod.deldays <- with(mids.delsummary, glm.nb(days.del.14 ~ rcs(age, 3) + gender + insurance.code +
-                                              marshall.comb + pt.cerebral.na + rcs(iss, 3) + cpr.yn +
-                                              base.motor.imp + base.pupil.react +
-                                              rcs(base.glucose.imp, 3) +
-                                              rcs(base.hemoglobin.imp, 3)))
+mod.deldays <- with(mids.deldays, glm.nb(days.del.14 ~ rcs(age, 3) + gender + insurance.code +
+                                           marshall.comb + pt.cerebral.na + rcs(iss, 3) + cpr.yn +
+                                           base.motor.imp + base.pupil.react +
+                                           rcs(base.glucose.imp, 3) +
+                                           rcs(base.hemoglobin.imp, 3)))
 
 ```
 
@@ -1471,7 +1468,7 @@ get_lrtests_deldays <- function(rhvar){
   ## Perform LR test and extract df, X2, and p-value
   lrInfo <- lrtest_removeTerm(orgModel = mod.deldays,
                               removeTerm = delsummary.rhvars[rhvar],
-                              miceObjName = 'mids.delsummary')
+                              miceObjName = 'mids.deldays')
   
   ## Turn results into a data.frame with variable name added
   tmp <- flatten_dbl(lrInfo) %>%
@@ -1490,7 +1487,7 @@ lrtests.deldays <- map(names(delsummary.rhvars), get_lrtests_deldays) %>% bind_r
 ## -- Get IRRs, CIs for each term ------------------------------------------------------------------
 ## Use calc_nb_ratioci, but turn into data.frame and add variable name to make combining easier
 get_irrci_deldays <- function(rhvar){
-  tmp <- calc_nb_ratioci(nbObj = mod.deldays, predVar = rhvar, df = tbi.oneobs.icu) %>%
+  tmp <- calc_nb_ratioci(nbObj = mod.deldays, predVar = rhvar, df = tbi.survivors) %>%
     as.data.frame()
   tmp <- cbind('covariate' = rep(rhvar, nrow(tmp)),
                tmp)
@@ -1498,9 +1495,9 @@ get_irrci_deldays <- function(rhvar){
   ## Character versions of ref.val, comp.val:
   ## If covariate is a factor, replace ref.val and comp.val with appropriate levels; otherwise,
   ## just character versions of numerics
-  if(inherits(tbi.oneobs.icu[,rhvar], 'factor')){
-    tmp$ref.val.c <- levels(tbi.oneobs.icu[,rhvar])[tmp$ref.val]
-    tmp$comp.val.c <- levels(tbi.oneobs.icu[,rhvar])[tmp$comp.val]
+  if(inherits(tbi.survivors[,rhvar], 'factor')){
+    tmp$ref.val.c <- levels(tbi.survivors[,rhvar])[tmp$ref.val]
+    tmp$comp.val.c <- levels(tbi.survivors[,rhvar])[tmp$comp.val]
   } else{
     tmp$ref.val.c <- as.character(round(tmp$ref.val, 2))
     tmp$comp.val.c <- as.character(round(tmp$comp.val, 2))
@@ -1517,7 +1514,7 @@ irrs.deldays <- map(names(delsummary.rhvars), get_irrci_deldays) %>%
          covarRow = 1:n()) %>%
   ungroup()
 
-irrs.deldays$varLabel <- map_chr(irrs.deldays$covariate, ~label(tbi.oneobs.icu[,.]))
+irrs.deldays$varLabel <- map_chr(irrs.deldays$covariate, ~label(tbi.survivors[,.]))
 
 ## -- Create a row that describes the group test for all nonlinear terms ---------------------------
 ## -- Actually, this would be a pain; we'd have to create all the NL terms by hand; let's wait -----
@@ -1525,10 +1522,10 @@ irrs.deldays$varLabel <- map_chr(irrs.deldays$covariate, ~label(tbi.oneobs.icu[,
 
 ## -- P-value, LR for overall model ----------------------------------------------------------------
 ## Fit intercept-only model
-mod.deldays.null <- with(mids.delsummary, glm.nb(days.del.14 ~ 1))
+mod.deldays.null <- with(mids.deldays, glm.nb(days.del.14 ~ 1))
 
 lrtest.deldays.overall <-
-  pool.compare(mod.deldays, mod.deldays.null, data = mids.delsummary, method = 'likelihood')
+  pool.compare(mod.deldays, mod.deldays.null, data = mids.deldays, method = 'likelihood')
 lrtest.deldays.overall.df <- data.frame(varLabel = '***Overall Model***',
                                         ref.val.c = '',
                                         comp.val.c = '',
@@ -1542,7 +1539,7 @@ blankRow <- data.frame(varLabel = "", ref.val.c = "", comp.val.c = "", irr.ci = 
                        df = NA, Chisq = "", P = "")
 
 modstats.deldays <- data.frame(varLabel = c("*Observations*"),
-                               ref.val.c = format(nrow(mids.delsummary$data), big.mark = ','))
+                               ref.val.c = format(nrow(mids.deldays$data), big.mark = ','))
 
 results.deldays <- irrs.deldays %>%
   left_join(lrtests.deldays, by = 'covariate') %>%
@@ -1583,15 +1580,16 @@ pandoc.table(results.deldays, justify = 'lrrrrrr', style = 'rmarkdown',
 #### `r figure_nums('deldays_figures')`
 
 We present the number of delirium days within 14 days of admission for each level of each covariate,
-adjusted to the median or reference level of all other covariates (our best "typical" value).
+adjusted to the median or reference level of all other covariates (our best "typical" value) among
+all hospital survivors in our cohort.
 
 ```{r deldays_figures_prep}
 ## -- Create a "baseline" design matrix, adjusted to the median or reference of every covariate ----
 ## What are rcspline.eval() values for medians of continuous covariates?
-get_deldays_median <- function(x){ median(tbi.oneobs.icu[,x], na.rm = TRUE) }
+get_deldays_median <- function(x){ median(tbi.survivors[,x], na.rm = TRUE) }
 get_deldays_medspline <- function(x){
-  knot.locs <- rcspline.eval(tbi.oneobs.icu[,x], nk = 3, knots.only = TRUE)
-  x.med <- median(tbi.oneobs.icu[,x], na.rm = TRUE)
+  knot.locs <- rcspline.eval(tbi.survivors[,x], nk = 3, knots.only = TRUE)
+  x.med <- median(tbi.survivors[,x], na.rm = TRUE)
   as.numeric(rcspline.eval(x.med, knots = knot.locs))
 }
 
@@ -1619,7 +1617,7 @@ create_deldays_designmatrix <- function(varName,
                                         ##  should be included?
                                         defaultVals = deldays.defaults,
                                           ## vector of default values for all coefficients
-                                        df = tbi.oneobs.icu){ ## data frame to use for unique values
+                                        df = tbi.survivors){ ## data frame to use for unique values
   
   ## Which coefficients is this variable involved in?
   varInCoefs <- grep(varName, gsub('rcs\\(.*\\)', '', gsub('[0-9]+$', '', names(defaultVals))))
@@ -1714,7 +1712,7 @@ names(tipXLabs) <- names(deldays.predvals)
 
 create_deldays_figures <- function(df){
   ## Get variable label for plot title
-  varLabel <- label(tbi.oneobs.icu[,names(df)[1]])
+  varLabel <- label(tbi.survivors[,names(df)[1]])
   
   ## Create tooltip text to be used in "dummy" text aesthetic
   if(inherits(tbi.oneobs.icu[,names(df)[1]], 'factor')){
@@ -1735,13 +1733,12 @@ create_deldays_figures <- function(df){
   ## If <=10 rows in df, plot using points and errorbars
   if(nrow(df) <= 10){
     p <- ggplot(data = df, aes_string(x = names(df)[1], y = 'count.pe', text = 'tipText')) +
-      geom_errorbar(aes(ymin = count.lcl, ymax = count.ucl),
-                    width = 0, alpha = 0.5, colour = "#003D79") +
+      geom_errorbar(aes(ymin = count.lcl, ymax = count.ucl), width = 0, colour = "#003D79") +
       geom_point(colour = "#003D79") +
       scale_x_continuous(name = NULL,
                          limits = c(0.5, max(df[,1]) + 0.5),
                          breaks = df[,1],
-                         labels = levels(tbi.oneobs.icu[,names(df)[1]]))
+                         labels = levels(tbi.survivors[,names(df)[1]]))
   } else{
     p <- ggplot(data = df, aes_string(x = names(df)[1], y = 'count.pe')) +
       geom_ribbon(aes(ymin = count.lcl, ymax = count.ucl), alpha = 0.4, fill = "#003D79") +
@@ -1763,7 +1760,7 @@ names(deldays.ggplots) <- names(deldays.predvals)
 
 ## -- Function to create plot_ly objects ------------------------------------------------------------
 deldays_ggtoplotly <- function(elementNum){
-  figTitle <- label(tbi.oneobs.icu[,names(deldays.ggplots)[[elementNum]]])
+  figTitle <- label(tbi.survivors[,names(deldays.ggplots)[[elementNum]]])
   
   ggplotly(deldays.ggplots[[elementNum]], tooltip = c("text")) %>%
     layout(showlegend = FALSE,
@@ -1782,7 +1779,7 @@ deldays.plotlys <- map(1:length(deldays.ggplots), deldays_ggtoplotly)
 
 ```
 
-```{r deldays_figures, results = 'asis', fig.width=8.5, fig.height=25}
+```{r deldays_figures, results = 'asis', fig.width=8.5, fig.height=15}
 p <- subplot(deldays.plotlys, nrows = 6, shareY = TRUE, margin = 0.02)
 
 p
