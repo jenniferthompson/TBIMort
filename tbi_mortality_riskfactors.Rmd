@@ -1702,18 +1702,39 @@ names(deldays.predvals) <- names(delsummary.rhvars)
 
 ```
 
-```{r deldays_figures}
+```{r create_deldays_figures}
 ## -- Function to create a plot for each data.frame: errorbars for plots with <=10 rows, -----------
 ## -- lines + ribbons for continuous ---------------------------------------------------------------
 max.y <- max(bind_rows(deldays.predvals)$count.ucl)
+
+## Short labels to be used in tooltips
+tipXLabs <- c("Age", "Gender", "Insurance", "Marshall", "Cerebral SAH", "ISS", "CPR", "Motor Score",
+              "Pupil Reactivity", "Glucose", "Hgb")
+names(tipXLabs) <- names(deldays.predvals)
 
 create_deldays_figures <- function(df){
   ## Get variable label for plot title
   varLabel <- label(tbi.oneobs.icu[,names(df)[1]])
   
+  ## Create tooltip text to be used in "dummy" text aesthetic
+  if(inherits(tbi.oneobs.icu[,names(df)[1]], 'factor')){
+    df$tipText <- with(df, paste0(tipXLabs[names(df)[1]], ": ",
+                                  levels(tbi.oneobs.icu[,names(df)[1]])[df[,1]],
+                                  "<br>Count (95% CI): ",
+                                  rndformat(count.pe), " (",
+                                  rndformat(count.lcl), ", ",
+                                  rndformat(count.ucl), ")"))
+  } else{
+    df$tipText <- with(df, paste0(tipXLabs[names(df)[1]], ": ", df[,1],
+                                  "<br>Count (95% CI): ",
+                                  rndformat(count.pe), " (",
+                                  rndformat(count.lcl), ", ",
+                                  rndformat(count.ucl), ")"))
+  }
+  
   ## If <=10 rows in df, plot using points and errorbars
   if(nrow(df) <= 10){
-    p <- ggplot(data = df, aes_string(x = names(df)[1], y = 'count.pe')) +
+    p <- ggplot(data = df, aes_string(x = names(df)[1], y = 'count.pe', text = 'tipText')) +
       geom_errorbar(aes(ymin = count.lcl, ymax = count.ucl),
                     width = 0, alpha = 0.5, colour = "#003D79") +
       geom_point(colour = "#003D79") +
@@ -1724,19 +1745,47 @@ create_deldays_figures <- function(df){
   } else{
     p <- ggplot(data = df, aes_string(x = names(df)[1], y = 'count.pe')) +
       geom_ribbon(aes(ymin = count.lcl, ymax = count.ucl), alpha = 0.4, fill = "#003D79") +
-      geom_line(colour = "#003D79")
+      geom_line(colour = "#003D79") +
+      ## tipText won't show up unless I fake it out like this. weird.
+      geom_line(aes(text = tipText), colour = "#003D79")
   }
   p +
-    ggtitle(varLabel) +
+    # ggtitle(varLabel) +
     scale_y_continuous(name = 'Adjusted Days of Delirium',
                        limits = c(0, ceiling(max.y)),
                        breaks = seq(0, ceiling(max.y), 1)) +
     theme_minimal() +
-    theme(panel.border = element_rect(fill = NA, colour = "grey92"))
+    theme(panel.border = element_rect(fill = NA, colour = "grey80"))
 }
 
-deldays.plots <- map(deldays.predvals, create_deldays_figures)
-multiplot(deldays.plots, layout = matrix(1:length(deldays.plots), ncol = 1))
+deldays.ggplots <- map(deldays.predvals, create_deldays_figures)
+names(deldays.ggplots) <- names(deldays.predvals)
+
+## -- Function to create plot_ly objects ------------------------------------------------------------
+deldays_ggtoplotly <- function(elementNum){
+  figTitle <- label(tbi.oneobs.icu[,names(deldays.ggplots)[[elementNum]]])
+  
+  ggplotly(deldays.ggplots[[elementNum]], tooltip = c("text")) %>%
+    layout(showlegend = FALSE,
+           annotations = list(xanchor = "left", xref = "paper",
+                              yanchor = "bottom", yref = "paper",
+                              x = 0, y = 1,
+                              text = paste0("<b>", figTitle, "</b>"),
+                              font = list(size = 16),
+                              showarrow = FALSE),
+           xaxis = list(title = ""),
+           yaxis = list(title = "Adjusted Days of Delirium"),
+           margin = list(b = 20, l = 80, t = 40, r = 20))
+}
+
+deldays.plotlys <- map(1:length(deldays.ggplots), deldays_ggtoplotly)
+
+```
+
+```{r deldays_figures, results = 'asis', fig.width=8.5, fig.height=25}
+p <- subplot(deldays.plotlys, nrows = 6, shareY = TRUE, margin = 0.02)
+
+p
 
 ```
 
