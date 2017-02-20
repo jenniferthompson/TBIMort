@@ -454,8 +454,7 @@ categorical variables are listed first):
         - Antipsychotics (olanzapine, quetiapine, risperidone, ziprasidone, and haloperidol; all converted to haloperidol equivalents); forced to be linear
         - Beta-blockers (propranolol, labetalol, esmolol, and metoprolol; all converted to metoprolol equivalents); allowed to be nonlinear
         - Propofol; forced to be linear
-        - Clonidine; forced to be linear
-        - Dexmedetomidine; had to dichotomize *(`r paste(levels(tbi.daily.icu$any.dex), collapse = '; ')`)* due to high proportion of 0 values and sparse non-zero values
+    - Alpha-2 agonists: dichotomous indicator for whether patient received clonidine and/or dexmedetomidine in a 24-hour period
     - 24-hour units of blood products:
         - PRBC *(`r paste(levels(tbi.daily.icu$any.prbc), collapse = '; ')`)*
         - Plasma, platelets, and/or cryo *(`r paste(levels(tbi.daily.icu$any.plasmaplt), collapse = '; ')`)*
@@ -480,9 +479,9 @@ mortality.continuous.covars <- c('age', 'iss', 'vent.days', 'los',
                                  'max.motor.imp', 'min.glucose.imp', 'min.hemoglobin.imp',
                                  'min.sodium.imp', 'sofa.mod.nanormal.imp', 'tot.opioid.cube',
                                  'tot.benzo.cube', 'tot.antipsyc.cube', 'tot.betablock.cube',
-                                 'tot.propofol.cube', 'tot.clonid.cube')
+                                 'tot.propofol.cube')
 mortality.categorical.covars <- c('gender', 'insurance.code', 'marshall.comb', 'pt.cerebral.na',
-                                  'cpr.yn', 'pupil.react.imp', 'mental.status', 'any.dex',
+                                  'cpr.yn', 'pupil.react.imp', 'mental.status', 'any.alpha2',
                                   'any.prbc', 'any.plasmaplt', 'disposition.comb')
 
 mort.corr.data <- dplyr::select(tbi.oneobs.icu, mrn, one_of(mortality.continuous.covars)) %>%
@@ -514,7 +513,7 @@ mortality.daily.covars <- c('max.motor.imp', 'pupil.react.imp', 'min.glucose.imp
                             'min.hemoglobin.imp', 'min.sodium.imp', 'mental.status',
                             'sofa.mod.nanormal.imp', 'max.icp.imp', 'max.icp.dich',
                             'tot.opioid.cube', 'tot.benzo.cube', 'tot.antipsyc.cube',
-                            'tot.betablock.cube', 'tot.propofol.cube', 'any.dex', 'tot.clonid.cube',
+                            'tot.betablock.cube', 'tot.propofol.cube', 'any.alpha2',
                             'any.prbc', 'any.plasmaplt')
 mortality.3yr.covars <- c('disposition.comb', 'vent.days', 'los')
 
@@ -602,7 +601,7 @@ daily.mort.inhosp.org <- tbi.daily.icu %>%
   dplyr::select(mrn, study.day, max.motor.imp, pupil.react.imp, min.glucose.imp, min.hemoglobin.imp,
                 min.sodium.imp, mental.status, sofa.mod.nanormal.imp, max.icp.imp, max.icp.dich,
                 tot.opioid.cube, tot.benzo.cube, tot.antipsyc.cube, tot.betablock.cube,
-                tot.propofol.cube, any.dex, tot.clonid.cube, any.prbc, any.plasmaplt)
+                tot.propofol.cube, any.alpha2, any.prbc, any.plasmaplt)
 
 ## Create beginning time-varying data set
 tv.mort.inhosp <- create_countprocess_data(org.data = daily.mort.inhosp.org,
@@ -635,7 +634,7 @@ label(modeldata.mort.inhosp$min.hemoglobin.imp) <- label(tbi.daily$min.hemoglobi
 label(modeldata.mort.inhosp$min.sodium.imp) <- label(tbi.daily$min.sodium.imp)
 label(modeldata.mort.inhosp$mental.status) <- label(tbi.daily$mental.status)
 label(modeldata.mort.inhosp$max.icp.dich) <- label(tbi.daily$max.icp.dich)
-label(modeldata.mort.inhosp$any.dex) <- label(tbi.daily$any.dex)
+label(modeldata.mort.inhosp$any.alpha2) <- label(tbi.daily$any.alpha2)
 label(modeldata.mort.inhosp$any.prbc) <- label(tbi.daily$any.prbc)
 label(modeldata.mort.inhosp$any.plasmaplt) <- label(tbi.daily$any.plasmaplt)
 ## Shorten super long label for modified SOFA
@@ -656,8 +655,7 @@ redun.mort.inhosp <- redun(~ age + gender + insurance.code + iss + cpr.yn + mars
                              min.hemoglobin.imp + min.sodium.imp + mental.status +
                              sofa.mod.nanormal.imp + tot.opioid.cube +
                              tot.benzo.cube + I(tot.antipsyc.cube) + tot.betablock.cube +
-                             I(tot.propofol.cube) + any.dex + I(tot.clonid.cube) + any.prbc +
-                             any.plasmaplt,
+                             I(tot.propofol.cube) + any.alpha2 + any.prbc + any.plasmaplt,
                            data = modeldata.mort.inhosp, type = 'adjusted', nk = 4, allcat = TRUE)
 
 highr2.mort.inhosp <- which.max(redun.mort.inhosp$rsq1)
@@ -677,8 +675,8 @@ areg.mort.inhosp <- aregImpute(~ age + gender + insurance.code + iss + cpr.yn + 
                                  min.glucose.imp + min.hemoglobin.imp + min.sodium.imp +
                                  mental.status + sofa.mod.nanormal.imp + max.icp.dich +
                                  tot.opioid.cube + tot.benzo.cube + tot.antipsyc.cube +
-                                 tot.betablock.cube + tot.propofol.cube + any.dex +
-                                 tot.clonid.cube + any.prbc + any.plasmaplt + start.day,
+                                 tot.betablock.cube + tot.propofol.cube + any.alpha2 + any.prbc +
+                                 any.plasmaplt + start.day,
                                data = modeldata.mort.inhosp,
                                n.impute = 5, burnin = 3)
 
@@ -697,10 +695,10 @@ mod.mort.inhosp <- fit.mult.impute(Surv.mort.inhosp ~ rcs(age, 4) + gender + ins
                                      rcs(tot.betablock.cube, 4) +
                                      ## 3 drugs have too many 0s + otherwise sparse data,
                                      ## can't fit splines
-                                     tot.antipsyc.cube + tot.propofol.cube + tot.clonid.cube +
-                                     ## Dex and blood products have too many 0s + wide range;
-                                     ## dichotomize
-                                     any.dex + any.prbc + any.plasmaplt,
+                                     tot.antipsyc.cube + tot.propofol.cube +
+                                     ## Alpha-2 agonists and blood products have too many 0s + wide
+                                     ## range; dichotomize
+                                     any.alpha2 + any.prbc + any.plasmaplt,
                                    fitter = cph,
                                    xtrans = areg.mort.inhosp,
                                    data = modeldata.mort.inhosp,
@@ -923,8 +921,8 @@ daily.mort.3yr.org <- tbi.daily.icu %>%
   filter(mrn %in% pts.inc.mort.3yr) %>%
   dplyr::select(mrn, study.day, max.motor.imp, pupil.react.imp, min.glucose.imp, min.hemoglobin.imp,
                 min.sodium.imp, mental.status, sofa.mod.nanormal.imp, max.icp.dich, tot.opioid,
-                tot.benzo, tot.antipsyc, tot.betablock, tot.propofol, tot.clonid, any.dex,
-                any.prbc, any.plasmaplt)
+                tot.benzo, tot.antipsyc, tot.betablock, tot.propofol, any.alpha2, any.prbc,
+                any.plasmaplt)
 
 ## Combine baseline and daily variables to prep for imputation
 basedaily.mort.3yr <- left_join(base.mort.3yr, daily.mort.3yr.org, by = 'mrn')
@@ -953,9 +951,9 @@ summary.mort.3yr <- complete.mort.3yr %>%
             mean.antipsyc.cube = mean(tot.antipsyc^(1/3)),
             mean.betablock.cube = mean(tot.betablock)^(1/3),
             mean.propofol.cube = mean(tot.propofol)^(1/3),
-            mean.clonid.cube = mean(tot.clonid)^(1/3),
-            ever.dex = factor(as.numeric(sum(any.dex == 'Some') > 0),
-                              levels = 0:1, labels = c('Never', 'At least some')),
+            days.alpha2 = sum(any.alpha2 == 'One or both', na.rm = TRUE),
+            ever.alpha2 = factor(as.numeric(sum(any.alpha2 == 'One or both') > 0),
+                                 levels = 0:1, labels = c('Never', 'At least once')),
             ever.prbc = factor(as.numeric(sum(any.prbc == 'At least some') > 0),
                                levels = 0:1, labels = c('Never', 'At least once')),
             ever.plasmaplt = factor(as.numeric(sum(any.plasmaplt == 'At least one') > 0),
@@ -980,8 +978,8 @@ label(summary.mort.3yr$mean.benzo.cube) <- 'Mean (24h benzodiazepines), cube roo
 label(summary.mort.3yr$mean.antipsyc.cube) <- 'Mean (24h antipsychotics), cube root'
 label(summary.mort.3yr$mean.betablock.cube) <- 'Mean (24h beta-blockers), cube root'
 label(summary.mort.3yr$mean.propofol.cube) <- 'Mean (24h propofol), cube root'
-label(summary.mort.3yr$mean.clonid.cube) <- 'Mean (24h clonidine), cube root'
-label(summary.mort.3yr$ever.dex) <- 'Ever received dexmedetomidine'
+label(summary.mort.3yr$days.alpha2) <- 'Days received alpha-2 agonist'
+label(summary.mort.3yr$ever.alpha2) <- 'Ever received alpha-2 agonist'
 label(summary.mort.3yr$ever.prbc) <- 'Ever received PRBC'
 label(summary.mort.3yr$ever.plasmaplt) <- 'Ever received plasma, platelets and/or cryo'
 
@@ -1018,15 +1016,14 @@ categorical variables are listed first):
     - Days of delirium
     - Days of coma
     - Highest modified SOFA score (excluding CNS component)
+    - Days received alpha-2 agonist (clonidine and/or dexmedetomidine)
     - Mean (24-hour doses of medications), with the means cube root transformed to mitigate the influence of extremely high values:
         - Opioids (hydromorphone, morphine, hydrocodone, methadone, remifentanil, and fentanyl; converted to fentanyl equivalents); allowed to be nonlinear
         - Benzodiazepines (lorazepam, diazepam, alprazolam, clonazepine, and midazolam; all converted to midazolam equivalents); allowed to be nonlinear
         - Antipsychotics (olanzapine, quetiapine, risperidone, ziprasidone, and haloperidol; all converted to haloperidol equivalents); forced to be linear
         - Beta-blockers (propranolol, labetalol, esmolol, and metoprolol; all converted to metoprolol equivalents); allowed to be nonlinear
         - Propofol; forced to be linear
-        - Clonidine; forced to be linear
     - Whether patient ever received:
-        - Dexmedetomidine *(`r paste(levels(withmiss.mort.3yr$ever.dex), collapse = '; ')`)*
         - PRBC *(`r paste(levels(withmiss.mort.3yr$ever.prbc), collapse = '; ')`)*
         - Plasma, platelets, and/or cryo *(`r paste(levels(withmiss.mort.3yr$ever.plasmaplt), collapse = '; ')`)*
 - Discharge
@@ -1048,8 +1045,8 @@ redun.mort.3yr <- redun(~ age + gender + insurance.code + iss + cpr.yn + marshal
                           lowest.hemoglobin + lowest.sodium + days.del + days.coma +
                           highest.modsofa + mean.opioid.cube + mean.benzo.cube +
                           mean.antipsyc.cube + mean.betablock.cube + mean.propofol.cube +
-                          mean.clonid.cube + ever.dex + ever.prbc + ever.plasmaplt +
-                          disposition.comb + vent.days + los,
+                          days.alpha2 + ever.prbc + ever.plasmaplt + disposition.comb + vent.days +
+                          los,
                         data = withmiss.mort.3yr,
                         type = 'adjusted', nk = 4, allcat = TRUE)
 
@@ -1066,7 +1063,7 @@ below shows Spearman correlations among continuous variables from the first impu
 ```{r print_mort_3yr_corr, results = 'asis', fig.width=10, fig.height=10}
 mort.3yr.corr.data <- summary.mort.3yr %>%
   filter(.imp == '1') %>%
-  dplyr::select(-.imp, -mrn, -days.no.pupil.data, -ever.dex, -ever.prbc, -ever.plasmaplt, -gender,
+  dplyr::select(-.imp, -mrn, -days.no.pupil.data, -ever.alpha2, -ever.prbc, -ever.plasmaplt, -gender,
                 -insurance.code, -cpr.yn, -marshall.comb, -pt.cerebral.na, -disposition.comb,
                 -died.3yr.dc, -time.death.3yr.dc)
 
@@ -1090,7 +1087,7 @@ mod.mort.3yr <- fit.mult.impute(Surv.mort.3yr ~ rcs(age, 4) + gender + insurance
                                   rcs(lowest.sodium, 4) + rcs(mean.opioid.cube, 3) +
                                   rcs(mean.benzo.cube, 3) + mean.antipsyc.cube +
                                   rcs(mean.betablock.cube, 3) + rcs(mean.propofol.cube, 4) +
-                                  rcs(mean.clonid.cube, 3) + ever.dex + ever.prbc + ever.plasmaplt +
+                                  rcs(days.alpha2, 3) + ever.prbc + ever.plasmaplt +
                                   rcs(vent.days, 3) + disposition.comb,
                                 fitter = cph,
                                 data = withmiss.mort.3yr,
