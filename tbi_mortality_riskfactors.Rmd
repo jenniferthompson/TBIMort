@@ -106,9 +106,10 @@ table_nums(name = 'mort_3yr_missing_baseline',
 table_nums(name = 'mort_3yr_missing_daily',
            caption = 'Patient-Days Requiring Imputation for Three-Year Mortality Model')
 table_nums(name = 'mort_3yr_results', caption = 'Model Results Summary, Three-Year Mortality')
-table_nums("delsummary_missing",
-           caption = "Missingness Among Baseline Covariates and Delirium Summary Outcomes")
+table_nums("deldays_missing", caption = "Missingness for Delirium Duration Model")
 table_nums(name = 'deldays_results', caption = 'Model Results Summary, Delirium Duration')
+table_nums("dcfds_missing", caption = "Missingness for Delirium/Coma-Free Days Model")
+table_nums(name = 'dcfds_results', caption = 'Model Results Summary, Delirium Duration')
 
 table_nums(name = 'package_info', caption = 'R Packages Loaded')
 
@@ -1343,8 +1344,8 @@ rownames(deldays.missing) <- NULL
 
 ```
 
-All `r format(length(pts.inc.survived), big.mark = ',')` patients in the main cohort will be
-included in our model for delirium duration; `r n.deldays.missany` of these (`r round((n.deldays.missany / length(pts.inc.survived))*100)`%) are missing one or more baseline covariates and/or delirium duration. `r table_nums("deldays_missing", display = 'cite')` details how many patients in our cohort are missing which covariates or outcome. This missingness will be
+All `r format(length(pts.inc.survived), big.mark = ',')` hospital survivors will be included in our
+model for delirium duration; `r n.deldays.missany` of these (`r round((n.deldays.missany / length(pts.inc.survived))*100)`%) are missing one or more baseline covariates and/or delirium duration. `r table_nums("deldays_missing", display = 'cite')` details how many patients in our cohort are missing which covariates or outcome. This missingness will be
 handled with multiple imputation.
 
 #### `r table_nums("deldays_missing")`
@@ -1795,6 +1796,203 @@ p
 
 ```
 
+
+## Delirium/Coma-Free Days among All Patients
+### Patient Inclusion and Missing Data
+
+```{r dcfds_missing}
+## -- How many patients are missing each covariate and outcome? ------------------------------------
+## How many are missing at least one covariate/outcome?
+n.dcfds.missany <- sum(rowSums(is.na(tbi.oneobs.icu[,c(delsummary.covars, 'dcfd.14')])) > 0)
+
+dcfds.missing <-
+  as.data.frame(do.call(rbind,
+                        lapply(c(delsummary.covars, 'dcfd.14'),
+                               FUN = function(vname){
+                                 nmiss <- sum(is.na(tbi.oneobs.icu[,vname]))
+                                 pctall.miss <- round((nmiss / n.included.main)*100, 2)
+                                 c(nmiss, pctall.miss)
+                               })))
+dcfds.missing <- cbind(c(delsummary.covars, 'dcfd.14'), dcfds.missing)
+names(dcfds.missing) <- c('Variable', 'N Missing Covariate', '% Eligible Patients')
+dcfds.missing <- dcfds.missing[dcfds.missing[,2] > 0,]
+rownames(dcfds.missing) <- NULL
+
+```
+
+All `r format(n.included.main, big.mark = ',')` patients in the main cohort will be
+included in our model for delirium/coma-free days; `r n.dcfds.missany` of these (`r round((n.dcfds.missany / n.included.main)*100)`%) are missing one or more baseline covariates and/or the outcome. `r table_nums("dcfds_missing", display = 'cite')` details how many patients in our cohort are missing which covariates or outcome. This missingness will be handled with multiple
+imputation.
+
+#### `r table_nums("dcfds_missing")`
+```{r print_dcfds_missing, results = 'asis'}
+pandoc.table(dcfds.missing, justify = c('left', 'right', 'right'))
+
+```
+
+```{r dcfds_datamgmt}
+## -- Create data sets for delirium duration models ------------------------------------------------
+## Baseline/day 0 information
+base.dcfds <- tbi.oneobs.icu %>%
+  dplyr::select(mrn, one_of(delsummary.covars), dcfd.14)
+
+## Daily data, for imputing delirium duration/DCFDs
+daily.dcfds.org <- tbi.daily.icu %>%
+  filter(event %in% paste('Inpatient Day',
+                          c('01', '02', '03', '04', '05', '06', '07', '08', '09', 10:14))) %>%
+  dplyr::select(mrn, study.day, max.motor.imp, pupil.react.imp, min.glucose.imp, min.hemoglobin.imp,
+                min.sodium.imp, mental.status, sofa.mod.nanormal.imp, max.icp.dich, tot.opioid,
+                tot.benzo, tot.antipsyc, tot.betablock, tot.propofol, tot.clonid, any.dex,
+                any.prbc, any.plasmaplt)
+
+## Combine baseline and daily variables to prep for daily mental status imputation
+basedaily.dcfds <- left_join(dplyr::select(base.dcfds, -dcfd.14), daily.dcfds.org, by = 'mrn')
+
+## Impute daily values
+mice.dcfds.daily <- mice(basedaily.dcfds[,-1], visitSequence = 'monotone')
+
+## Create long data frame of original data + all imputed data sets
+complete.dcfds.daily <- mice::complete(mice.dcfds.daily, action = 'long', include = TRUE)
+
+## Add MRN and calculate summary statistics by imputation, patient
+summary.dcfds <- complete.dcfds.daily %>%
+  ## Do not include original data for now - calculating days.del.14/dcfd.14 won't work the same way
+  ## because there's no days.mental
+  filter(.imp %in% 1:99) %>%
+  mutate(mrn = rep(basedaily.dcfds$mrn, length(unique(complete.dcfds.daily$.imp)) - 1)) %>%
+  group_by(.imp, mrn) %>%
+  summarise(dcfd.14 = 14 - sum(mental.status %in% c('Delirious', 'Comatose'), na.rm = TRUE)) %>%
+  as.data.frame()
+
+## Add original data - need to add .imp first
+dcfds.org <- cbind(factor(rep(0, nrow(base.dcfds))),
+                   subset(base.dcfds, select = c(mrn, dcfd.14)))
+names(dcfds.org)[1] <- '.imp'
+
+summary.dcfds <- bind_rows(dcfds.org, summary.dcfds)
+
+## Impute baseline variables, using original delirium duration/DCFDs if available
+mice.dcfds.base <- mice(base.dcfds[,-1], visitSequence = 'monotone')
+complete.dcfds.base <- mice::complete(mice.dcfds.base, action = 'long', include = TRUE)
+
+## Replace versions of delirium outcomes which were imputed *ignoring* partial data with those
+## imputed *using* partial data where available
+complete.dcfds.base$mrn <- rep(base.dcfds$mrn, length(unique(complete.dcfds.base$.imp)))
+
+complete.dcfds <- left_join(dplyr::select(complete.dcfds.base, -dcfd.14), summary.dcfds,
+                            by = c('.imp', 'mrn')) %>%
+  dplyr::select(-.id) %>%
+  mutate(.imp = factor(.imp))
+
+## Put complete.dcfds back into mids format to use with mice
+mids.dcfds <- as.mids.update(complete.dcfds, .imp = 1, .id = NULL)
+
+```
+
+### Redundancy Analysis
+To see if any of the covariates in our DCFD model are nearly fully explained by the others, we
+performed a redundancy analysis. Adjusted R^2^ values for each covariate are shown below.
+
+```{r dcfds_redun, results = 'markup'}
+redun.dcfds <- redun(as.formula(paste('~', paste(delsummary.covars, collapse = ' + '))),
+                     data = tbi.oneobs.icu, type = 'adjusted', nk = 4, allcat = TRUE)
+
+highr2.dcfds <- which.max(redun.dcfds$rsq1)
+
+round(redun.dcfds$rsq1, 2)
+
+```
+
+The highest adjusted R^2^ value is `r round(redun.dcfds$rsq1[highr2.dcfds], 2)` (`r names(redun.dcfds$rsq1[highr2.dcfds])`), indicating that there are no redundant variables.
+All covariates will be included as specified above.
+
+### Model Choice
+
+The distribution of delirium/coma-free days over the first 14 days, shown below, follows a strange
+distribution; therefore, we will use a proportional odds logistic regression model with multiple
+imputation to look for relationships between it and baseline risk factors. POLR models are robust to
+assumptions of outcome distribution.
+
+```{r dcfd_histogram, results = 'asis'}
+p <- ggplot(data = tbi.oneobs.icu, aes(x = dcfd.14)) +
+  geom_histogram(fill = "#003D79") +
+  theme_minimal() +
+  scale_x_continuous(name = 'Delirium/Coma-Free Days', breaks = 0:14) +
+  scale_y_continuous(name = 'Count of Patients', breaks = seq(0, 500, 100))
+
+p %>%
+  ggplotly(tooltip = c('x', 'y'))
+
+
+# mjs_plot(tbi.oneobs.icu$dcfd.14,
+#          title = '14-Day Delirium/Coma-Free Days among All Patients',
+#          description = 'Histogram of delirium/coma-free days within 14 days of hospital admission. Each bar = number of DCFDs; barh eight = counts of patients with that many DCFDs.',
+#          decimals = 0,
+#          width = 750, height = 400) %>%
+#   mjs_histogram(bins = 15) %>%
+#   mjs_labs(x_label = 'DCFDs within 14 days of admission',
+#            y_label = 'Count')
+
+```
+
+```{r dcfds_fitmod}
+## -- Fit model for DCFDs --------------------------------------------------------------------------
+mod.dcfds <- fit.mult.impute(dcfd.14 ~ rcs(age, 3) + gender + insurance.code + marshall.comb +
+                               pt.cerebral.na + rcs(iss, 3) + cpr.yn + base.motor.imp +
+                               base.pupil.react + rcs(base.glucose.imp, 3) +
+                               rcs(base.hemoglobin.imp, 3),
+                             fitter = lrm,
+                             xtrans = mids.dcfds,
+                             data = tbi.oneobs.icu,
+                             x = TRUE, y = TRUE)
+
+mod.dcfds.noimp <- lrm(dcfd.14 ~ rcs(age, 3) + gender + insurance.code + marshall.comb +
+                         pt.cerebral.na + rcs(iss, 3) + cpr.yn + base.motor.imp +
+                         base.pupil.react + rcs(base.glucose.imp, 3) +
+                         rcs(base.hemoglobin.imp, 3),
+                       data = tbi.oneobs.icu,
+                       x = TRUE, y = TRUE)
+
+## -- Set datadist ---------------------------------------------------------------------------------
+dd.dcfds <- datadist(tbi.oneobs.icu)
+options(datadist = 'dd.dcfds')
+
+```
+
+### Proportional Odds Assumption
+```{r dcfds_assumptions}
+p <- rms_po_assume(mod.dcfds, cuts = 1:13, mfrowAuto = FALSE,
+                   impObj = mids.dcfds, modelData = tbi.oneobs.icu) +
+  theme(strip.text = element_text(size = 7),
+        axis.text.x = element_text(size = 5))
+
+```
+
+```{r print_dcfds_assumptions, results = 'asis', fig.width = 8.5, fig.height = 6}
+p %>%
+  ggplotly(tooltip = c('x', 'y'))
+
+```
+
+### Model Results
+`r table_nums('dcfds_results', display = 'cite')` presents a summary of results from the
+delirium/coma-free days model. Odds ratios indicate a comparison between the "comparison" vs the "reference" columns, holding all other covariates at the median or reference category. For example,
+a patient who was `r round(dd.dcfds$limits$age[3])` years old at the time of injury has about `r round(summary(mod.dcfds, age = c(dd.dcfds$limits$age[1], dd.dcfds$limits$age[3]), est.all = FALSE)[2, 'Effect'], 1)` times the odds of more DCFDs compared to a patient who was `r round(dd.dcfds$limits$age[1])` years old, assuming all other covariates are equal. Reference and comparison values for continuous variables are the 25th and 75th percentiles, respectively.
+
+**Please note** that while p-values reflect the entire association of each covariate with our
+outcome, odds ratios are only valid for the comparisons listed: For continuous covariates which are allowed to have a nonlinear association with DCFDs, the odds ratios depend on the two values we choose; for categorical covariates with more than two categories, the odds ratios depend on the reference level chosen.
+
+#### `r table_nums('dcfds_results')`
+```{r dcfds_results}
+results.dcfds <- rms_model_results(mod.dcfds, labeldf = tbi.oneobs.icu, printFormat = 'markdown')
+names(results.dcfds) <- gsub('HR ', 'OR ', cph.results.headers)
+
+```
+
+```{r print_dcfds_results, results = 'asis'}
+pandoc.table(results.dcfds[1:(nrow(results.dcfds) - 15),],
+             justify = 'lrrrrrr', style = 'rmarkdown', split.tables = 800)
+```
 
 # Software Details
 
