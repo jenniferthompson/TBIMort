@@ -121,6 +121,7 @@ figure_nums(name = 'mort_inhosp_figures', 'Hazard Ratios and 95% CIs, In-Hospita
 figure_nums(name = 'mort_3yr_zph', 'Proportional Hazards Assumption, Three-Year Mortality')
 figure_nums(name = 'mort_3yr_figures', 'Hazard Ratios and 95% CIs, Three-Year Mortality')
 figure_nums(name = 'deldays_figures', 'Adjusted Counts and 95% CIs, Delirium Days')
+figure_nums(name = 'dcfds_figures', 'Odds Ratios and 95% CIs, Delirium/Coma-Free Days')
 
 ## -- Load analysis data sets, additional data management ------------------------------------------
 load('AnalysisData/tbi_datasets.Rdata')
@@ -1982,6 +1983,10 @@ a patient who was `r round(dd.dcfds$limits$age[3])` years old at the time of inj
 **Please note** that while p-values reflect the entire association of each covariate with our
 outcome, odds ratios are only valid for the comparisons listed: For continuous covariates which are allowed to have a nonlinear association with DCFDs, the odds ratios depend on the two values we choose; for categorical covariates with more than two categories, the odds ratios depend on the reference level chosen.
 
+**Reminder**: For delirium/coma-free days, an odds ratio above 1 is **good** (higher odds of more
+"good" days, alive with normal mental status); an odds ratio below 1 is **bad** (higher odds of more
+"bad" days with delirium, coma, and/or death).
+
 #### `r table_nums('dcfds_results')`
 ```{r dcfds_results}
 results.dcfds <- rms_model_results(mod.dcfds, labeldf = tbi.oneobs.icu, printFormat = 'markdown')
@@ -1992,6 +1997,93 @@ names(results.dcfds) <- gsub('HR ', 'OR ', cph.results.headers)
 ```{r print_dcfds_results, results = 'asis'}
 pandoc.table(results.dcfds[1:(nrow(results.dcfds) - 15),],
              justify = 'lrrrrrr', style = 'rmarkdown', split.tables = 800)
+```
+
+#### `r figure_nums('dcfds_figures')`
+For numeric variables, all odds ratios are for comparison to the median, our best "typical" value;
+comparison values are the 10th, 25th, 75th, and 90th percentiles by default, though in some cases, some of these percentiles are the same. For categorical variables, the reference level is the lefthand level.
+
+**Reminder**: For delirium/coma-free days, an odds ratio above 1 is **good** (higher odds of more
+"good" days, alive with normal mental status); an odds ratio below 1 is **bad** (higher odds of more
+"bad" days with delirium, coma, and/or death).
+
+```{r dcfds_figures}
+## -- Get data frame of all ORs for all covariates -------------------------------------------------
+## Get all unique variables used in model fit
+vars.dcfds <- unique(gsub("'+|=.+$", "", names(mod.dcfds$coefficients)))[-1]
+
+ors.dcfds <- map(vars.dcfds, rms_calc_comparisons,
+                 rmsObj = mod.dcfds, getRatios = TRUE, df = tbi.oneobs.icu) %>%
+  bind_rows()
+
+## -- Add variable *labels* ------------------------------------------------------------------------
+ors.dcfds.labels <- map_df(vars.dcfds,
+                           ~data.frame('variable' = ., 'varlabel' = label(tbi.oneobs.icu[,.]))) %>%
+  bind_rows()
+
+ors.dcfds <- ors.dcfds %>%
+  left_join(ors.dcfds.labels, by = 'variable') %>%
+  left_join(dplyr::select(results.dcfds, Covariate, P),
+            by = c("varlabel" = "Covariate"))
+
+## -- Create properly ordered factor levels --------------------------------------------------------
+ors.dcfds.flevels <-
+  ## Get all unique factor levels + whether they are reference
+  unique(subset(ors.dcfds, select = c(comp.c, is.ref))) %>%
+  ## Create variables by which to order: numeric/NA, then for character, whether reference
+  ## (numeric levels will always be ordered by numeric value, regardless of reference)
+  mutate(level.num = as.numeric(as.character(comp.c)),
+         is.ref.factor = ifelse(!is.na(level.num), FALSE, is.ref)) %>%
+  ## Only need original, new reference indicator, and numeric
+  dplyr::select(comp.c, is.ref.factor, level.num) %>%
+  ## Take only unique: no need for multiple 0 levels, for example
+  unique() %>%
+  ## Sort all possible levels by 1. numeric values in order, 2. all reference levels,
+  ## 3. all other character levels
+  arrange(level.num, desc(is.ref.factor)) %>%
+  ## Give each unique value a numeric value
+  mutate(flevel.num = 1:nrow(.))
+
+## Merge numeric values onto original data set, create final factor variable
+ors.dcfds <- ors.dcfds %>%
+  left_join(dplyr::select(ors.dcfds.flevels, comp.c, flevel.num),
+            by = c('comp.c')) %>%
+  mutate(flevel = factor(flevel.num, labels = ors.dcfds.flevels$comp.c),
+         varlabel.p = paste0(varlabel, '; P: ', P),
+         tipText = gsub('^ *', '',
+                        gsub('\\( +', '\\(',
+                             gsub('  +', ' ',
+                                  paste0(comp.c, ' vs ', ref.c, ': ',
+                                         rndformat(effect), ' (', rndformat(lcl), ', ',
+                                         rndformat(ucl), ')')))))
+
+## -- Create a single faceted plot for all covariate HRs vs reference levels -----------------------
+## Change column names to work better in tooltips
+names(ors.dcfds) <- gsub('flevel', 'Comparison', names(ors.dcfds))
+names(ors.dcfds) <- gsub('lcl', 'Lower.CL', names(ors.dcfds))
+names(ors.dcfds) <- gsub('ucl', 'Upper.CL', names(ors.dcfds))
+names(ors.dcfds) <- gsub('effect', 'OR', names(ors.dcfds))
+names(ors.dcfds) <- gsub('ref.c', 'Reference', names(ors.dcfds))
+
+gg.dcfds <- ggplot(data = ors.dcfds, aes(x = Comparison, label = Reference, y = OR)) +
+  facet_wrap(~ varlabel.p, ncol = 1, scales = 'free') +
+  geom_hline(yintercept = 1, colour = 'grey90', size = 1.25) +
+  geom_pointrange(aes(ymin = Lower.CL, ymax = Upper.CL, colour = abs(log(OR)), text = tipText)) +
+  scale_color_viridis(direction = -1, end = 0.9, name = 'Effect Size<br>(Log Scale)') +
+  scale_x_discrete(name = '') +
+  scale_y_continuous(name = ' <br>Odds Ratios (95% Confidence Intervals), Delirium/Coma-Free Days<br> ',
+                     breaks = c(0.25, 0.5, 1, 1.25, 1.5, 2, 4, 8, 16)) +
+  guides(fill = FALSE) +
+  theme_bw() +
+  theme(axis.text = element_text(size = 8))
+
+```
+
+
+```{r print_dcfds_figures, results = 'asis', fig.width=8.5, fig.height=35}
+gg.dcfds %>%
+  ggplotly(tooltip = c("text"))
+
 ```
 
 # Software Details
