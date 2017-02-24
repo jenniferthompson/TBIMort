@@ -167,6 +167,40 @@ label(tbi.daily$any.plasmaplt) <- '24h plasma and/or platelets'
 ## Dichotomous variables for PRBC, all drugs
 any.drug <- function(x){ factor(ifelse(x == 0, 1, 2), levels = 1:2, labels = c('None', 'Some')) }
 
+## Ever/never and "days among exposed" for delirium, coma, mental status
+tbi.oneobs <- tbi.oneobs %>%
+  mutate(ever.del = factor(ifelse(is.na(days.del), NA,
+                           ifelse(days.del == 0, 0, 1)),
+                           levels = 0:1, labels = c('Never', 'At least one day')),
+         days.del.exp = ifelse(is.na(ever.del) | (!is.na(ever.del) & ever.del == 'Never'), NA,
+                               days.del),
+         ever.del.14 = factor(ifelse(is.na(days.del.14), NA,
+                              ifelse(days.del.14 == 0, 0, 1)),
+                              levels = 0:1, labels = c('Never', 'At least one day')),
+         days.del.14.exp = ifelse(is.na(ever.del.14) |
+                                    (!is.na(ever.del.14) & ever.del.14 == 'Never'), NA,
+                                  days.del.14),
+         ever.coma = factor(ifelse(is.na(days.coma), NA,
+                            ifelse(days.coma == 0, 0, 1)),
+                            levels = 0:1, labels = c('Never', 'At least one day')),
+         days.coma.exp = ifelse(is.na(ever.coma) | (!is.na(ever.coma) & ever.coma == 'Never'), NA,
+                                days.coma),
+         ever.mental = factor(ifelse(is.na(days.mental), NA,
+                              ifelse(days.mental == 0, 0, 1)),
+                              levels = 0:1, labels = c('Never', 'At least one day')),
+         days.mental.exp = ifelse(is.na(ever.mental) |
+                                    (!is.na(ever.mental) & ever.mental == 'Never'), NA,
+                                  days.mental))
+
+label(tbi.oneobs$ever.del) <- 'Ever delirious?'
+label(tbi.oneobs$days.del.exp) <- 'Days of delirium among exposed'
+label(tbi.oneobs$ever.del.14) <- 'Ever delirious within 14 days of admission?'
+label(tbi.oneobs$days.del.14.exp) <- 'Days of delirium within 14 days among exposed'
+label(tbi.oneobs$ever.coma) <- 'Ever comatose?'
+label(tbi.oneobs$days.coma.exp) <- 'Days of coma among exposed'
+label(tbi.oneobs$ever.mental) <- 'Ever assessed for mental status?'
+label(tbi.oneobs$days.mental.exp) <- 'Days of mental status info among those assessed'
+
 tbi.daily <- tbi.daily %>%
   mutate(any.prbc = factor(ifelse(units.prbc > 0, 2, 1),
                            levels = 1:2, labels = c('None', 'At least some')),
@@ -282,8 +316,10 @@ pandoc.table(consort.table, justify = c('left', 'right'))
 #### `r table_nums('descstats_oneobs')`
 ```{r print_descstats_oneobs, results = 'markup'}
 html(summaryM(age + gender + race + insurance.code + iss + cpr.yn + pt.marshall + pt.cerebral +
-                pt.epidural + pt.injury + vent.days + days.mental + days.del + days.coma + dcfd.14 +
-                icu.los + los + hosp.death + disposition.coded + fim.total + died.3yr.adm ~ 1,
+                pt.epidural + pt.injury + vent.days + ever.mental + days.mental + days.mental.exp +
+                ever.del + days.del + days.del.exp + ever.del.14 + days.del.14 + days.del.14.exp +
+                ever.coma + days.coma + days.coma.exp + dcfd.14 + icu.los + los + hosp.death +
+                disposition.coded + fim.total + died.3yr.adm ~ 1,
               data = tbi.oneobs.icu),
      exclude1 = FALSE, long = TRUE, npct = 'both', what = '%', digits = 2,
      prmsd = TRUE, brmsd = TRUE, rmarkdown = TRUE,
