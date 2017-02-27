@@ -910,7 +910,7 @@ rownames(mort.3yr.daily.missing) <- NULL
 
 ```
 
-### Patient Inclusion and Missing Data
+### Patient Inclusion and Missing Data {#mort3yrmissingness}
 Out of `r length(pts.inc.survived)` patients who survived their hospital stay and were eligible to
 be included in the three-year mortality model, `r n.exc.mort.3yr` are missing one or more baseline
 covariates and will be excluded, leaving **`r length(pts.inc.mort.3yr)`** patients included. `r table_nums("mort_3yr_missing_baseline", display = 'cite')` details how many otherwise eligible patients are missing which baseline covariates.
@@ -1046,7 +1046,7 @@ options(datadist = 'dd.survivors')
 
 ```
 
-### Model Covariates
+### Model Covariates {#mort3yrcovariates}
 We will include the following covariates in the three-year mortality model (reference levels for
 categorical variables are listed first):
 
@@ -2115,6 +2115,43 @@ gg.dcfds %>%
 
 ```
 
+# Functional Independence Measure among Hospital Survivors
+
+The [Functional Independence Measure](https://en.wikipedia.org/wiki/Functional_Independence_Measure) is a score which, in our case, describes disability and burden of care among TBI survivors.
+**Higher** scores are **better**.
+
+## Patient Inclusion and Missing Data
+
+```{r fim_missing}
+nMissFIM <- sum(is.na(tbi.survivors$fim.total))
+pctMissFIM <- round(mean(is.na(tbi.survivors$fim.total))*100)
+
+```
+
+All `r length(pts.inc.survived)` survivors in our cohort are included in this model, which will use
+the [same covariates](#mort3yrcovariates) as the three-year mortality model. Please see [that
+section](#mort3yrmissingness) for details on covariate missingness. Among survivors, `r pctMissFIM`%
+(N = `r nMissFIM`) were missing FIM score at hospital discharge. Missing covariates and outcomes
+will be handled using multiple imputation.
+
+## Model Choice
+
+The distribution of FIM scores at discharge, shown below, follows a distribution not described by a
+mathematical distribution; therefore, we will use a proportional odds logistic regression model with
+multiple imputation to look for relationships between it and baseline risk factors. POLR models are
+robust to assumptions of outcome distribution.
+
+```{r fim_histogram, results = 'asis', message = FALSE}
+p <- ggplot(data = tbi.survivors, aes(x = fim.total)) +
+  geom_histogram(fill = "#003D79") +
+  theme_minimal() +
+  scale_x_continuous(name = 'Functional Independence Measure at Discharge', breaks = 0:14) +
+  scale_y_continuous(name = 'Count of Patients', breaks = seq(0, 500, 100))
+
+p %>%
+  ggplotly(tooltip = c('x', 'y'))
+
+```
 
 # Software Details
 
