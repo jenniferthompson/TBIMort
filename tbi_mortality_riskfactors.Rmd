@@ -109,7 +109,9 @@ table_nums(name = 'mort_3yr_results', caption = 'Model Results Summary, Three-Ye
 table_nums("deldays_missing", caption = "Missingness for Delirium Duration Model")
 table_nums(name = 'deldays_results', caption = 'Model Results Summary, Delirium Duration')
 table_nums("dcfds_missing", caption = "Missingness for Delirium/Coma-Free Days Model")
-table_nums(name = 'dcfds_results', caption = 'Model Results Summary, Delirium Duration')
+table_nums(name = 'dcfds_results', caption = 'Model Results Summary, Delirium/Coma-Free Days')
+table_nums("fim_missing", caption = "Missingness for FIM Model")
+table_nums(name = 'fim_results', caption = 'Model Results Summary, FIM at Discharge')
 
 table_nums(name = 'package_info', caption = 'R Packages Loaded')
 
@@ -246,8 +248,10 @@ pts.inc <- intersect(icu.pts, unique(tbi.daily.icu$mrn))
 ## Subset tbi.oneobs to only include pts.inc
 tbi.oneobs.icu <- filter(tbi.oneobs, mrn %in% pts.inc)
 
-## -- Patients who survived hospital stay, are eligible for 3-year mortality model -----------------
+## -- Patients who survived hospital stay -> eligible for 3-year mortality, delirium duration, -----
+## -- FIM models -----------------------------------------------------------------------------------
 pts.inc.survived <- subset(tbi.oneobs.icu, hosp.death == 'No')$mrn
+tbi.survivors <- subset(tbi.oneobs.icu, hosp.death == 'No')
 
 ```
 
@@ -880,37 +884,25 @@ gg.mort.inhosp %>%
 
 ## Three-Year Mortality among Hospital Survivors
 ```{r mort_3yr_missing}
-## -- How many patients are missing *any* baseline or discharge variables? -------------------------
-tbi.oneobs.icu$include.mort.3yr <-
-  ifelse(tbi.oneobs.icu$hosp.death == 'Yes', FALSE,
-         rowSums(is.na(tbi.oneobs.icu[,c(mortality.baseline.covars, mortality.3yr.covars)])) == 0)
-n.exc.mort.3yr <- sum(!subset(tbi.oneobs.icu, mrn %in% pts.inc.survived)$include.mort.3yr)
-
-## MRNs of patients included in mortality models
-pts.inc.mort.3yr <- unique(subset(tbi.oneobs.icu, include.mort.3yr)$mrn)
-
 mort.3yr.baseline.missing <-
   as.data.frame(do.call(rbind,
                         lapply(c(mortality.baseline.covars, mortality.3yr.covars),
                                FUN = function(vname){
-                                 tmp <- subset(tbi.oneobs.icu, mrn %in% pts.inc.survived)
-                                 nmiss <- sum(is.na(tmp[,vname]))
+                                 nmiss <- sum(is.na(tbi.survivors[,vname]))
                                  pctall.miss <- round((nmiss / length(pts.inc.survived))*100, 2)
-                                 pctexc.miss <- round((nmiss / n.exc.mort.3yr)*100, 0)
-                                 c(nmiss, pctall.miss, pctexc.miss)
+                                 c(nmiss, pctall.miss)
                                })))
 mort.3yr.baseline.missing <- cbind(c(mortality.baseline.covars, mortality.3yr.covars),
                                    mort.3yr.baseline.missing)
 names(mort.3yr.baseline.missing) <- c('Covariate',
                                       'N Missing Covariate',
-                                      '% Eligible Patients',
-                                      '% Excluded Patients')
+                                      '% Eligible Patients')
 mort.3yr.baseline.missing <- mort.3yr.baseline.missing[mort.3yr.baseline.missing[,2] > 0,]
 rownames(mort.3yr.baseline.missing) <- NULL
 
 ## Describe missingness among patient-days included in in-hospital mortality model
 mort.3yr.daily.missing <- tbi.daily.icu %>%
-  filter(mrn %in% pts.inc.mort.3yr) %>%
+  filter(mrn %in% pts.inc.survived) %>%
   dplyr::select(one_of(mortality.daily.covars)) %>%
   missingInDataFrame() %>%
   filter(nmiss > 0)
@@ -925,7 +917,7 @@ covariates and will be excluded, leaving **`r length(pts.inc.mort.3yr)`** patien
 
 #### `r table_nums("mort_3yr_missing_baseline")`
 ```{r print_mort_3yr_missing_baseline, results = 'asis'}
-pandoc.table(mort.3yr.baseline.missing, justify = c('left', 'right', 'right', 'right'))
+pandoc.table(mort.3yr.baseline.missing, justify = c('left', 'right', 'right'))
 
 ```
 
@@ -949,30 +941,31 @@ imputation procedures
 ```{r mort_3yr_datamgmt}
 ## -- Create data sets for 3-year mortality model --------------------------------------------------
 ## Baseline and discharge information
-base.mort.3yr <- tbi.oneobs.icu %>%
-  filter(include.mort.3yr) %>%
+base.survivors <- tbi.survivors %>%
   dplyr::select(mrn, age, gender, insurance.code, iss, cpr.yn, marshall.comb, pt.cerebral.na,
-                disposition.comb, vent.days, los, died.3yr.dc, time.death.3yr.dc)
+                base.glucose.imp, base.pupil.react.imp, base.hemoglobin.imp, base.motor.imp,
+                disposition.comb, vent.days, los, fim.total, days.del.14, dcfd.14, died.3yr.dc,
+                time.death.3yr.dc)
 
 ## Daily data
-daily.mort.3yr.org <- tbi.daily.icu %>%
-  filter(mrn %in% pts.inc.mort.3yr) %>%
+daily.survivors.org <- tbi.daily.icu %>%
+  filter(mrn %in% pts.inc.survived) %>%
   dplyr::select(mrn, study.day, max.motor.imp, pupil.react.imp, min.glucose.imp, min.hemoglobin.imp,
                 min.sodium.imp, mental.status, sofa.mod.nanormal.imp, max.icp.dich, tot.opioid,
                 tot.benzo, tot.antipsyc, tot.betablock, tot.propofol, any.alpha2, any.prbc,
                 any.plasmaplt)
 
 ## Combine baseline and daily variables to prep for imputation
-basedaily.mort.3yr <- left_join(base.mort.3yr, daily.mort.3yr.org, by = 'mrn')
+basedaily.survivors <- left_join(base.survivors, daily.survivors.org, by = 'mrn')
 
 ## Impute daily values
-mice.mort.3yr <- mice(basedaily.mort.3yr[,-1], visitSequence = 'monotone')
+mice.survivors.daily <- mice(basedaily.survivors[,-1], visitSequence = 'monotone')
 
 ## Calculate summary statistics by imputation
-complete.mort.3yr <- mice::complete(mice.mort.3yr, action = 'long', include = TRUE)
+complete.survivors.daily <- mice::complete(mice.survivors.daily, action = 'long', include = TRUE)
 
-summary.mort.3yr <- complete.mort.3yr %>%
-  mutate(mrn = rep(basedaily.mort.3yr$mrn, length(unique(complete.mort.3yr$.imp)))) %>%
+summary.survivors <- complete.survivors.daily %>%
+  mutate(mrn = rep(basedaily.survivors$mrn, length(unique(complete.survivors.daily$.imp)))) %>%
   group_by(.imp, mrn) %>%
   summarise(days.motor.lt6 = sum(max.motor.imp < 6),
             days.no.pupil.data = sum(is.na(pupil.react.imp)),
@@ -996,40 +989,60 @@ summary.mort.3yr <- complete.mort.3yr %>%
                                levels = 0:1, labels = c('Never', 'At least once')),
             ever.plasmaplt = factor(as.numeric(sum(any.plasmaplt == 'At least one') > 0),
                                     levels = 0:1, labels = c('Never', 'At least once'))) %>%
-  left_join(base.mort.3yr, by = 'mrn') %>%
+  left_join(base.survivors, by = 'mrn') %>%
   as.data.frame()
 
 ## Add variable labels
-label(summary.mort.3yr$.imp) <- 'Imputation'
-label(summary.mort.3yr$mrn) <- 'MRN'
-label(summary.mort.3yr$days.motor.lt6) <- 'Days with max motor score <6'
-label(summary.mort.3yr$days.no.pupil.data) <- 'Days with no pupil reactivity data'
-label(summary.mort.3yr$days.fixed.pupil) <- 'Days with at least one fixed pupil'
-label(summary.mort.3yr$lowest.glucose) <- 'Lowest glucose in hospital'
-label(summary.mort.3yr$lowest.hemoglobin) <- 'Lowest hemoglobin in hospital'
-label(summary.mort.3yr$lowest.sodium) <- 'Lowest sodium in hospital'
-label(summary.mort.3yr$days.del) <- 'Days with delirium'
-label(summary.mort.3yr$days.coma) <- 'Days with coma'
-label(summary.mort.3yr$highest.modsofa) <- 'Highest modified SOFA in hospital'
-label(summary.mort.3yr$mean.opioid.cube) <- 'Mean (24h opioids), cube root'
-label(summary.mort.3yr$mean.benzo.cube) <- 'Mean (24h benzodiazepines), cube root'
-label(summary.mort.3yr$mean.antipsyc.cube) <- 'Mean (24h antipsychotics), cube root'
-label(summary.mort.3yr$mean.betablock.cube) <- 'Mean (24h beta-blockers), cube root'
-label(summary.mort.3yr$mean.propofol.cube) <- 'Mean (24h propofol), cube root'
-label(summary.mort.3yr$days.alpha2) <- 'Days received alpha-2 agonist'
-label(summary.mort.3yr$ever.alpha2) <- 'Ever received alpha-2 agonist'
-label(summary.mort.3yr$ever.prbc) <- 'Ever received PRBC'
-label(summary.mort.3yr$ever.plasmaplt) <- 'Ever received plasma, platelets and/or cryo'
+label(summary.survivors$.imp) <- 'Imputation'
+label(summary.survivors$mrn) <- 'MRN'
+label(summary.survivors$days.motor.lt6) <- 'Days with max motor score <6'
+label(summary.survivors$days.no.pupil.data) <- 'Days with no pupil reactivity data'
+label(summary.survivors$days.fixed.pupil) <- 'Days with at least one fixed pupil'
+label(summary.survivors$lowest.glucose) <- 'Lowest glucose in hospital'
+label(summary.survivors$lowest.hemoglobin) <- 'Lowest hemoglobin in hospital'
+label(summary.survivors$lowest.sodium) <- 'Lowest sodium in hospital'
+label(summary.survivors$days.del) <- 'Days with delirium'
+label(summary.survivors$days.coma) <- 'Days with coma'
+label(summary.survivors$highest.modsofa) <- 'Highest modified SOFA in hospital'
+label(summary.survivors$mean.opioid.cube) <- 'Mean (24h opioids), cube root'
+label(summary.survivors$mean.benzo.cube) <- 'Mean (24h benzodiazepines), cube root'
+label(summary.survivors$mean.antipsyc.cube) <- 'Mean (24h antipsychotics), cube root'
+label(summary.survivors$mean.betablock.cube) <- 'Mean (24h beta-blockers), cube root'
+label(summary.survivors$mean.propofol.cube) <- 'Mean (24h propofol), cube root'
+label(summary.survivors$days.alpha2) <- 'Days received alpha-2 agonist'
+label(summary.survivors$ever.alpha2) <- 'Ever received alpha-2 agonist'
+label(summary.survivors$ever.prbc) <- 'Ever received PRBC'
+label(summary.survivors$ever.plasmaplt) <- 'Ever received plasma, platelets and/or cryo'
 
-## Put summary.mort.3yr back into mids format to use with mice
-mids.mort.3yr <- as.mids.update(summary.mort.3yr, .imp = 1, .id = NULL)
+## Impute baseline variables, using original delirium duration/DCFDs if available
+mice.survivors.base <- mice(base.survivors[,-1], visitSequence = 'monotone')
+complete.survivors.base <- mice::complete(mice.survivors.base, action = 'long', include = TRUE)
+
+## Replace versions of daily variables which were imputed *ignoring* partial data with those
+## imputed *using* partial data where available
+complete.survivors.base$mrn <- rep(base.survivors$mrn, length(unique(complete.survivors.base$.imp)))
+
+## Which variables do the completed baseline dataset and the summarized imputed dataset have in
+## common? We only want the summarized daily variables to be merged; for baseline variables we'll
+## take the versions from complete.survivors.base (need to keep .imp and mrn to merge)
+vars.in.common <- intersect(names(complete.survivors.base), names(summary.survivors))
+vars.in.common <- vars.in.common[!(vars.in.common %in% c('.imp', 'mrn'))]
+
+complete.survivors <- left_join(complete.survivors.base,
+                                dplyr::select(summary.survivors, -one_of(vars.in.common)),
+                                by = c('.imp', 'mrn')) %>%
+  dplyr::select(-.id) %>%
+  mutate(.imp = factor(.imp))
+
+## Put complete.survivors back into mids format to use with mice
+mids.survivors <- as.mids.update(complete.survivors, .imp = 1, .id = NULL)
 
 ## Pull out original summarized data to use as starting data set
-withmiss.mort.3yr <- summary.mort.3yr %>% filter(.imp == '0')
+withmiss.survivors <- complete.survivors %>% filter(.imp == '0')
 
 ## Set datadist
-dd.3yr <- datadist(summary.mort.3yr, adjto.cat = 'first')
-options(datadist = 'dd.3yr')
+dd.survivors <- datadist(withmiss.survivors, adjto.cat = 'first')
+options(datadist = 'dd.survivors')
 
 ```
 
@@ -1039,12 +1052,12 @@ categorical variables are listed first):
 
 - Baseline
     - Age at admission
-    - Gender *(`r paste(levels(withmiss.mort.3yr$gender), collapse = '; ')`)*
-    - Insurance type *(`r paste(levels(withmiss.mort.3yr$insurance.code), collapse = '; ')`)*
-    - Marshall Class equivalent *(`r paste(levels(withmiss.mort.3yr$marshall.comb), collapse = '; ')`)*
-    - Cerebral subarachnoid hemorrhage (SAH) *(`r paste(levels(withmiss.mort.3yr$pt.cerebral.na), collapse = '; ')`)*
+    - Gender *(`r paste(levels(withmiss.survivors$gender), collapse = '; ')`)*
+    - Insurance type *(`r paste(levels(withmiss.survivors$insurance.code), collapse = '; ')`)*
+    - Marshall Class equivalent *(`r paste(levels(withmiss.survivors$marshall.comb), collapse = '; ')`)*
+    - Cerebral subarachnoid hemorrhage (SAH) *(`r paste(levels(withmiss.survivors$pt.cerebral.na), collapse = '; ')`)*
     - Injurity Severity Score (ISS)
-    - CPR *(`r paste(levels(withmiss.mort.3yr$cpr.yn), collapse = '; ')`)*
+    - CPR *(`r paste(levels(withmiss.survivors$cpr.yn), collapse = '; ')`)*
 - In-Hospital
     - Lowest glucose
     - Lowest hemoglobin
@@ -1062,11 +1075,11 @@ categorical variables are listed first):
         - Beta-blockers (propranolol, labetalol, esmolol, and metoprolol; all converted to metoprolol equivalents); allowed to be nonlinear
         - Propofol; forced to be linear
     - Whether patient ever received:
-        - PRBC *(`r paste(levels(withmiss.mort.3yr$ever.prbc), collapse = '; ')`)*
-        - Plasma, platelets, and/or cryo *(`r paste(levels(withmiss.mort.3yr$ever.plasmaplt), collapse = '; ')`)*
+        - PRBC *(`r paste(levels(withmiss.survivors$ever.prbc), collapse = '; ')`)*
+        - Plasma, platelets, and/or cryo *(`r paste(levels(withmiss.survivors$ever.plasmaplt), collapse = '; ')`)*
 - Discharge
     - Days on mechanical ventilation
-    - Discharge disposition *(`r paste(levels(withmiss.mort.3yr$disposition.comb), collapse = '; ')`)*
+    - Discharge disposition *(`r paste(levels(withmiss.survivors$disposition.comb), collapse = '; ')`)*
 
 Hospital length of stay was also considered, but was strongly related to several other covariates,
 and so was not included in the final model since it would likely inflate standard errors without
@@ -1085,7 +1098,7 @@ redun.mort.3yr <- redun(~ age + gender + insurance.code + iss + cpr.yn + marshal
                           mean.antipsyc.cube + mean.betablock.cube + mean.propofol.cube +
                           days.alpha2 + ever.prbc + ever.plasmaplt + disposition.comb + vent.days +
                           los,
-                        data = withmiss.mort.3yr,
+                        data = withmiss.survivors,
                         type = 'adjusted', nk = 4, allcat = TRUE)
 
 highr2.mort.3yr <- which.max(redun.mort.3yr$rsq1)
@@ -1099,11 +1112,12 @@ enough to absolutely be excluded from analysis, there are several strongly relat
 below shows Spearman correlations among continuous variables from the first imputed data set.
 
 ```{r print_mort_3yr_corr, results = 'asis', fig.width=10, fig.height=10}
-mort.3yr.corr.data <- summary.mort.3yr %>%
+mort.3yr.corr.data <- complete.survivors %>%
   filter(.imp == '1') %>%
   dplyr::select(-.imp, -mrn, -days.no.pupil.data, -ever.alpha2, -ever.prbc, -ever.plasmaplt, -gender,
                 -insurance.code, -cpr.yn, -marshall.comb, -pt.cerebral.na, -disposition.comb,
-                -died.3yr.dc, -time.death.3yr.dc)
+                -died.3yr.dc, -time.death.3yr.dc, -base.glucose.imp, -base.pupil.react.imp,
+                -base.hemoglobin.imp, -base.motor.imp)
 
 corr.mort.3yr <- cor(mort.3yr.corr.data, use = 'pairwise.complete.obs', method = 'spearman')
 
@@ -1114,8 +1128,8 @@ corrplot.mixed(corr.mort.3yr,
 
 
 ```{r mort_3yr_fitmod}
-Surv.mort.3yr <- with(withmiss.mort.3yr, Surv(time = time.death.3yr.dc,
-                                              event = as.numeric(died.3yr.dc)))
+Surv.mort.3yr <- with(withmiss.survivors, Surv(time = time.death.3yr.dc,
+                                               event = as.numeric(died.3yr.dc)))
 
 mod.mort.3yr <- fit.mult.impute(Surv.mort.3yr ~ rcs(age, 4) + gender + insurance.code +
                                   rcs(iss, 4) + cpr.yn + marshall.comb + pt.cerebral.na +
@@ -1128,8 +1142,8 @@ mod.mort.3yr <- fit.mult.impute(Surv.mort.3yr ~ rcs(age, 4) + gender + insurance
                                   rcs(days.alpha2, 3) + ever.prbc + ever.plasmaplt +
                                   rcs(vent.days, 3) + disposition.comb,
                                 fitter = cph,
-                                data = withmiss.mort.3yr,
-                                xtrans = mids.mort.3yr,
+                                data = withmiss.survivors,
+                                xtrans = mids.survivors,
                                 x = TRUE, y = TRUE)
 
 # ## Model using no imputation for ADS abstract
@@ -1207,7 +1221,7 @@ assumption was generally satisfied.
 ### Model Results
 `r table_nums('mort_3yr_results', display = 'cite')` presents a summary of results from the
 three-year mortality model. Hazard ratios indicate a comparison between the "comparison" vs the "reference" columns, holding all other covariates at the median or reference category. For example,
-a patient who was `r round(dd.3yr$limits$age[3])` years old at the time of injury has about `r round(summary(mod.mort.3yr, age = c(dd.3yr$limits$age[1], dd.3yr$limits$age[3]), est.all = FALSE)[2, 'Effect'], 1)` times the hazard of three-year death at any time point compared to a patient who was `r round(dd.3yr$limits$age[1])` years old, assuming all other covariates are equal. Where possible, the reference and comparison values for continuous variables are the 25th and 75th percentiles, respectively; for variables where these quantities are the same (eg, several drug doses), these values are the minimum and maximum.
+a patient who was `r round(dd.survivors$limits$age[3])` years old at the time of injury has about `r round(summary(mod.mort.3yr, age = c(dd.survivors$limits$age[1], dd.survivors$limits$age[3]), est.all = FALSE)[2, 'Effect'], 1)` times the hazard of three-year death at any time point compared to a patient who was `r round(dd.survivors$limits$age[1])` years old, assuming all other covariates are equal. Where possible, the reference and comparison values for continuous variables are the 25th and 75th percentiles, respectively; for variables where these quantities are the same (eg, several drug doses), these values are the minimum and maximum.
 
 **Please note** that while p-values reflect the entire association of each covariate with our
 outcome, hazard ratios are only valid for the comparisons listed: For continuous covariates which are allowed to have a nonlinear association with mortality, the hazard ratios depend on the two values we choose; for categorical covariates with more than two categories, the hazard ratios depend on the reference level chosen. More detailed hazard ratios are displayed in `r figure_nums('mort_3yr_figures', display = 'cite')`.
@@ -1215,7 +1229,7 @@ outcome, hazard ratios are only valid for the comparisons listed: For continuous
 #### `r table_nums('mort_3yr_results')`
 ```{r mort_3yr_results}
 results.mort.3yr <- rms_model_results(mod.mort.3yr,
-                                      labeldf = summary.mort.3yr,
+                                      labeldf = summary.survivors,
                                       printFormat = 'markdown')
 names(results.mort.3yr) <- cph.results.headers
 
@@ -1242,13 +1256,13 @@ hrs.mort.3yr <- bind_rows(lapply(vars.mort.3yr,
                                  FUN = rms_calc_comparisons,
                                  rmsObj = mod.mort.3yr,
                                  getRatios = TRUE,
-                                 df = summary.mort.3yr))
+                                 df = summary.survivors))
 
 ## -- Add variable *labels* ------------------------------------------------------------------------
 hrs.mort.3yr.labels <- as.data.frame(do.call(rbind,
                                              lapply(vars.mort.3yr, FUN = function(v){
                                                c('variable' = v,
-                                                 'varlabel' = label(summary.mort.3yr[,v]))
+                                                 'varlabel' = label(summary.survivors[,v]))
                                              })))
 hrs.mort.3yr <- hrs.mort.3yr %>%
   left_join(hrs.mort.3yr.labels, by = 'variable') %>%
@@ -1356,11 +1370,8 @@ outcomes
 
 ```{r deldays_missing}
 ## -- List of baseline and day 1 covariates to include in models for delirium duration, DCFDs ------
-delsummary.covars <- c(mortality.baseline.covars, 'base.motor.imp', 'base.pupil.react',
+delsummary.covars <- c(mortality.baseline.covars, 'base.motor.imp', 'base.pupil.react.imp',
                        'base.glucose.imp', 'base.hemoglobin.imp')
-
-## -- Create data set of only hospital survivors to use for delirium duration model ----------------
-tbi.survivors <- subset(tbi.oneobs.icu, hosp.death == 'No')
 
 ## -- How many patients are missing each covariate and outcome? ------------------------------------
 ## How many are missing at least one covariate/outcome?
@@ -1397,14 +1408,14 @@ delsummary.rhvars <- c("age" = "rcs(age, 3)", "gender" = "gender",
                        "insurance.code" = "insurance.code", "marshall.comb" = "marshall.comb",
                        "pt.cerebral.na" = "pt.cerebral.na", "iss" = "rcs(iss, 3)",
                        "cpr.yn" = "cpr.yn", "base.motor.imp" = "base.motor.imp",
-                       "base.pupil.react" = "base.pupil.react",
+                       "base.pupil.react.imp" = "base.pupil.react.imp",
                        "base.glucose.imp" = "rcs(base.glucose.imp, 3)",
                        "base.hemoglobin.imp" = "rcs(base.hemoglobin.imp, 3)")
 
 ## -- Create data sets for delirium duration models ------------------------------------------------
 ## Baseline/day 0 information
 base.deldays <- tbi.survivors %>%
-  dplyr::select(mrn, one_of(delsummary.covars), days.del.14)
+  dplyr::select(mrn, one_of(delsummary.covars), fim.total, days.del.14)
 
 ## Daily data, for imputing delirium duration/DCFDs
 daily.deldays.org <- tbi.daily.icu %>%
@@ -1486,22 +1497,21 @@ binomial distribution; therefore, we will use a negative binomial model with mul
 look for relationships between it and baseline risk factors.
 
 ```{r del_duration_histogram, results = 'asis'}
-mjs_plot(tbi.survivors$days.del.14,
-         title = '14-Day Delirium Duration among Hospital Survivors',
-         description = 'Histogram of delirium duration within 14 days of hospital admission. Each bar = delirium duration; bar height = counts of patients with that many days of delirium.',
-         decimals = 0,
-         width = 750, height = 400) %>%
-  mjs_histogram(bins = 15) %>%
-  mjs_labs(x_label = 'Days of delirium within 14 days of admission',
-           y_label = 'Count')
+p <- ggplot(data = tbi.survivors, aes(x = days.del.14)) +
+  geom_histogram(fill = "#003D79") +
+  scale_x_continuous(name = 'Days of delirium within 14 days of admission', breaks = 0:14) +
+  scale_y_continuous(name = 'Count') +
+  theme_bw()
+p %>%
+  ggplotly(tooltip = c('x', 'y'))
 
 ```
 
 ```{r deldays_fitmod}
 ## -- Fit models for delirium duration -------------------------------------------------------------
-mod.deldays <- with(mids.deldays, glm.nb(days.del.14 ~ rcs(age, 3) + gender + insurance.code +
+mod.deldays <- with(mids.survivors, glm.nb(days.del.14 ~ rcs(age, 3) + gender + insurance.code +
                                            marshall.comb + pt.cerebral.na + rcs(iss, 3) + cpr.yn +
-                                           base.motor.imp + base.pupil.react +
+                                           base.motor.imp + base.pupil.react.imp +
                                            rcs(base.glucose.imp, 3) +
                                            rcs(base.hemoglobin.imp, 3)))
 
@@ -1960,35 +1970,18 @@ p <- ggplot(data = tbi.oneobs.icu, aes(x = dcfd.14)) +
 p %>%
   ggplotly(tooltip = c('x', 'y'))
 
-
-# mjs_plot(tbi.oneobs.icu$dcfd.14,
-#          title = '14-Day Delirium/Coma-Free Days among All Patients',
-#          description = 'Histogram of delirium/coma-free days within 14 days of hospital admission. Each bar = number of DCFDs; barh eight = counts of patients with that many DCFDs.',
-#          decimals = 0,
-#          width = 750, height = 400) %>%
-#   mjs_histogram(bins = 15) %>%
-#   mjs_labs(x_label = 'DCFDs within 14 days of admission',
-#            y_label = 'Count')
-
 ```
 
 ```{r dcfds_fitmod}
 ## -- Fit model for DCFDs --------------------------------------------------------------------------
 mod.dcfds <- fit.mult.impute(dcfd.14 ~ rcs(age, 3) + gender + insurance.code + marshall.comb +
                                pt.cerebral.na + rcs(iss, 3) + cpr.yn + base.motor.imp +
-                               base.pupil.react + rcs(base.glucose.imp, 3) +
+                               base.pupil.react.imp + rcs(base.glucose.imp, 3) +
                                rcs(base.hemoglobin.imp, 3),
                              fitter = lrm,
                              xtrans = mids.dcfds,
                              data = tbi.oneobs.icu,
                              x = TRUE, y = TRUE)
-
-mod.dcfds.noimp <- lrm(dcfd.14 ~ rcs(age, 3) + gender + insurance.code + marshall.comb +
-                         pt.cerebral.na + rcs(iss, 3) + cpr.yn + base.motor.imp +
-                         base.pupil.react + rcs(base.glucose.imp, 3) +
-                         rcs(base.hemoglobin.imp, 3),
-                       data = tbi.oneobs.icu,
-                       x = TRUE, y = TRUE)
 
 ## -- Set datadist ---------------------------------------------------------------------------------
 dd.dcfds <- datadist(tbi.oneobs.icu)
@@ -2121,6 +2114,7 @@ gg.dcfds %>%
   ggplotly(tooltip = c("text"))
 
 ```
+
 
 # Software Details
 
