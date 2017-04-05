@@ -2144,7 +2144,7 @@ multiple imputation to look for relationships between it and baseline risk facto
 robust to assumptions of outcome distribution.
 
 ```{r fim_histogram, results = 'asis', message = FALSE}
-p <- ggplot(data = tbi.survivors, aes(x = fim.total)) +
+p <- ggplot(data = subset(tbi.survivors, !is.na(fim.total)), aes(x = fim.total)) +
   geom_histogram(fill = "#003D79") +
   theme_minimal() +
   scale_x_continuous(name = 'Functional Independence Measure at Discharge', breaks = 0:14) +
@@ -2161,6 +2161,8 @@ p %>%
 
 `r devtools::session_info()$platform$version` was used for all analyses. `r table_nums('package_info', display = 'cite')` shows all add-on packages loaded.
 
+<details>
 ```{r technical, results = 'asis'}
 pander(devtools::session_info()$packages)
 ```
+</details>
