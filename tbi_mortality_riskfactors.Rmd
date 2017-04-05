@@ -911,9 +911,9 @@ rownames(mort.3yr.daily.missing) <- NULL
 ```
 
 ### Patient Inclusion and Missing Data {#mort3yrmissingness}
-Out of `r length(pts.inc.survived)` patients who survived their hospital stay and were eligible to
-be included in the three-year mortality model, `r n.exc.mort.3yr` are missing one or more baseline
-covariates and will be excluded, leaving **`r length(pts.inc.mort.3yr)`** patients included. `r table_nums("mort_3yr_missing_baseline", display = 'cite')` details how many otherwise eligible patients are missing which baseline covariates.
+There were `r length(pts.inc.survived)` patients who survived their hospital stay and were eligible
+to be included in the three-year mortality model. `r table_nums("mort_3yr_missing_baseline", display = 'cite')` details how many eligible patients are missing which baseline covariates. These missing
+values will be handled using multiple imputation.
 
 #### `r table_nums("mort_3yr_missing_baseline")`
 ```{r print_mort_3yr_missing_baseline, results = 'asis'}
@@ -921,9 +921,10 @@ pandoc.table(mort.3yr.baseline.missing, justify = c('left', 'right', 'right'))
 
 ```
 
-Among those patients included, we will calculate summary statistics across the entire hospital stay, using multiple imputation to handle patient-days with missing data. `r table_nums("mort_3yr_missing_daily", display = 'cite')` details the percentage
-and number of in-hospital patient-days among the `r length(pts.inc.mort.3yr)` patients included
-in the three-year mortality model with each variable missing.
+We will calculate summary statistics for in-hospital variables across the entire hospital stay,
+using multiple imputation to handle patient-days with missing data. `r table_nums("mort_3yr_missing_daily", display = 'cite')` details the percentage and number of
+in-hospital patient-days among the `r length(pts.inc.survived)` patients included in the three-year
+mortality model with each variable missing.
 
 #### `r table_nums("mort_3yr_missing_daily")`
 ```{r print_mort_3yr_missing_daily, results = 'asis'}
@@ -931,10 +932,11 @@ pandoc.table(mort.3yr.daily.missing[,c('Variable', '% (N)')], justify = c('left'
 
 ```
 
-Summary variables will be calculated as follows:
+Summary variables will be calculated and used as follows:
 
 1. Create multiply imputed longitudinal data sets (one record per in-hospital day)
-1. Calculate summary statistics (eg, days of delirium) for each patient in data set, separately
+1. Calculate summary statistics (eg, days of delirium) for each patient in data set, separately,
+then merge these with imputed baseline variables
 1. Use these imputed data sets to run three-year mortality models and combine using usual multiple
 imputation procedures
 
