@@ -124,6 +124,7 @@ figure_nums(name = 'mort_3yr_zph', 'Proportional Hazards Assumption, Three-Year 
 figure_nums(name = 'mort_3yr_figures', 'Hazard Ratios and 95% CIs, Three-Year Mortality')
 figure_nums(name = 'deldays_figures', 'Adjusted Counts and 95% CIs, Delirium Days')
 figure_nums(name = 'dcfds_figures', 'Odds Ratios and 95% CIs, Delirium/Coma-Free Days')
+figure_nums(name = 'fim_figures', 'Odds Ratios and 95% CIs, Functional Independence Measure at Discharge')
 
 ## -- Load analysis data sets, additional data management ------------------------------------------
 load('AnalysisData/tbi_datasets.Rdata')
@@ -1087,7 +1088,7 @@ Hospital length of stay was also considered, but was strongly related to several
 and so was not included in the final model since it would likely inflate standard errors without
 adding value.
 
-### Redundancy Analysis
+### Redundancy Analysis {#mort3yrredundancy}
 To see if any of the covariates in our three-year mortality model are nearly fully explained by the
 others, we performed a redundancy analysis on the original (unimputed) summary and baseline data.
 Adjusted R^2^ values for each covariate are shown below.
@@ -2131,17 +2132,15 @@ pctMissFIM <- round(mean(is.na(tbi.survivors$fim.total))*100)
 ```
 
 All `r length(pts.inc.survived)` survivors in our cohort are included in this model, which will use
-the [same covariates](#mort3yrcovariates) as the three-year mortality model. Please see [that
-section](#mort3yrmissingness) for details on covariate missingness. Among survivors, `r pctMissFIM`%
-(N = `r nMissFIM`) were missing FIM score at hospital discharge. Missing covariates and outcomes
-will be handled using multiple imputation.
+the [same baseline and in-hospital covariates](#mort3yrcovariates) as the three-year mortality
+model. Please see previous sections for details on [covariate missingness](#mort3yrmissingness) and [redundancy](#mort3yrredundancy) among these covariates. Among survivors, `r pctMissFIM`% (N = `r nMissFIM`) were missing FIM score at hospital discharge. Missing covariates and outcomes will be handled using multiple imputation.
 
 ## Model Choice
 
-The distribution of FIM scores at discharge, shown below, follows a distribution not described by a
-mathematical distribution; therefore, we will use a proportional odds logistic regression model with
-multiple imputation to look for relationships between it and baseline risk factors. POLR models are
-robust to assumptions of outcome distribution.
+The distribution of FIM scores at discharge, shown below, follows a distribution not well described
+by a mathematical distribution; therefore, we will use a proportional odds logistic regression model
+with multiple imputation to look for relationships between it and baseline risk factors. POLR models
+are robust to assumptions of outcome distribution.
 
 ```{r fim_histogram, results = 'asis', message = FALSE}
 p <- ggplot(data = subset(tbi.survivors, !is.na(fim.total)), aes(x = fim.total)) +
@@ -2152,6 +2151,155 @@ p <- ggplot(data = subset(tbi.survivors, !is.na(fim.total)), aes(x = fim.total))
 
 p %>%
   ggplotly(tooltip = c('x', 'y'))
+
+```
+
+```{r fim_fitmod}
+## -- Fit model for FIM score ----------------------------------------------------------------------
+mod.fim <- fit.mult.impute(fim.total ~ rcs(age, 4) + gender + insurance.code + rcs(iss, 4) +
+                             cpr.yn + marshall.comb + pt.cerebral.na + days.motor.lt6 +
+                             days.fixed.pupil + rcs(days.del, 3) + rcs(days.coma, 3) +
+                             rcs(highest.modsofa, 3) + rcs(lowest.glucose, 4) +
+                             rcs(lowest.hemoglobin, 4) + rcs(lowest.sodium, 4) +
+                             rcs(mean.opioid.cube, 3) + rcs(mean.benzo.cube, 3) +
+                             mean.antipsyc.cube + rcs(mean.betablock.cube, 3) +
+                             rcs(mean.propofol.cube, 4) + rcs(days.alpha2, 3) + ever.prbc +
+                             ever.plasmaplt + rcs(vent.days, 3) + disposition.comb,
+                           fitter = lrm,
+                           xtrans = mids.survivors,
+                           data = withmiss.survivors,
+                           x = TRUE, y = TRUE)
+
+## -- Set datadist ---------------------------------------------------------------------------------
+options(datadist = 'dd.survivors')
+
+```
+
+### Proportional Odds Assumption
+```{r fim_assumptions}
+p <- rms_po_assume(mod.fim, cuts = 4:11, mfrowAuto = FALSE,
+                   impObj = mids.survivors, modelData = withmiss.survivors) +
+  theme(strip.text = element_text(size = 7),
+        axis.text.x = element_text(size = 5))
+
+```
+
+```{r print_fim_assumptions, results = 'asis', fig.width = 8.5, fig.height = 6}
+p %>%
+  ggplotly(tooltip = c('x', 'y'))
+
+```
+
+In the original model, the restricted cubic spline for highest modified SOFA was fit using four
+knots (three degrees of freedom), but the last coefficient did not satisfy the assumption of proportional odds, varying dramatically over the levels of FIM scores; in other words, it seems that
+this four-knot spline was too unstable to be reliable. We refit the model using only three knots for
+this covariate, and the proportional odds assumption is met satisfactorily.
+
+## Model Results
+`r table_nums('fim_results', display = 'cite')` presents a summary of results from the model for FIM
+score at discharge. Odds ratios indicate a comparison between the "comparison" vs the "reference" columns, holding all other covariates at the median or reference category. For example,
+a patient who was `r round(dd.survivors$limits$age[3])` years old at the time of injury has about `r round(summary(mod.fim, age = c(dd.survivors$limits$age[1], dd.survivors$limits$age[3]), est.all = FALSE)[2, 'Effect'], 1)` times the odds of a higher FIM score compared to a patient who was `r round(dd.survivors$limits$age[1])` years old, assuming all other covariates are equal. Reference and comparison values for continuous variables are the 25th and 75th percentiles, respectively.
+
+**Please note** that while p-values reflect the entire association of each covariate with our
+outcome, odds ratios are only valid for the comparisons listed: For continuous covariates which are allowed to have a nonlinear association with FIM scores, the odds ratios depend on the two values we choose; for categorical covariates with more than two categories, the odds ratios depend on the reference level chosen.
+
+**Reminder**: For FIM scores, an odds ratio above 1 is **good** (higher odds of a higher score,
+i.e., more independence); an odds ratio below 1 is **bad** (higher odds of a lower score, i.e., less independence).
+
+### `r table_nums('fim_results')`
+```{r fim_results}
+results.fim <- rms_model_results(mod.fim, labeldf = summary.survivors, printFormat = 'markdown')
+names(results.fim) <- gsub('HR ', 'OR ', cph.results.headers)
+
+```
+
+```{r print_fim_results, results = 'asis'}
+pandoc.table(results.fim[1:(nrow(results.fim) - 15),],
+             justify = 'lrrrrrr', style = 'rmarkdown', split.tables = 800)
+```
+
+### `r figure_nums('fim_figures')`
+For numeric variables, all odds ratios are for comparison to the median, our best "typical" value;
+comparison values are the 10th, 25th, 75th, and 90th percentiles by default, though in some cases, some of these percentiles are the same. For categorical variables, the reference level is the lefthand level.
+
+**Reminder**: For FIM scores, an odds ratio above 1 is **good** (higher odds of "more independence"); an odds ratio below 1 is **bad** (higher odds of "less independence").
+
+```{r fim_figures}
+## -- Get data frame of all ORs for all covariates -------------------------------------------------
+## Get all unique variables used in model fit
+vars.fim <- unique(gsub("'+|=.+$", "", names(mod.fim$coefficients)))[-1]
+
+ors.fim <- map(vars.fim, rms_calc_comparisons,
+               rmsObj = mod.fim, getRatios = TRUE, df = summary.survivors) %>%
+  bind_rows()
+
+## -- Add variable *labels* ------------------------------------------------------------------------
+ors.fim.labels <- map_df(vars.fim,
+                         ~data.frame('variable' = ., 'varlabel' = label(summary.survivors[,.]))) %>%
+  bind_rows()
+
+ors.fim <- ors.fim %>%
+  left_join(ors.fim.labels, by = 'variable') %>%
+  left_join(dplyr::select(results.fim, Covariate, P),
+            by = c("varlabel" = "Covariate"))
+
+## -- Create properly ordered factor levels --------------------------------------------------------
+ors.fim.flevels <-
+  ## Get all unique factor levels + whether they are reference
+  unique(subset(ors.fim, select = c(comp.c, is.ref))) %>%
+  ## Create variables by which to order: numeric/NA, then for character, whether reference
+  ## (numeric levels will always be ordered by numeric value, regardless of reference)
+  mutate(level.num = as.numeric(as.character(comp.c)),
+         is.ref.factor = ifelse(!is.na(level.num), FALSE, is.ref)) %>%
+  ## Only need original, new reference indicator, and numeric
+  dplyr::select(comp.c, is.ref.factor, level.num) %>%
+  ## Take only unique: no need for multiple 0 levels, for example
+  unique() %>%
+  ## Sort all possible levels by 1. numeric values in order, 2. all reference levels,
+  ## 3. all other character levels
+  arrange(level.num, desc(is.ref.factor)) %>%
+  ## Give each unique value a numeric value
+  mutate(flevel.num = 1:nrow(.))
+
+## Merge numeric values onto original data set, create final factor variable
+ors.fim <- ors.fim %>%
+  left_join(dplyr::select(ors.fim.flevels, comp.c, flevel.num),
+            by = c('comp.c')) %>%
+  mutate(flevel = factor(flevel.num, labels = ors.fim.flevels$comp.c),
+         varlabel.p = paste0(varlabel, '; P: ', P),
+         tipText = gsub('^ *', '',
+                        gsub('\\( +', '\\(',
+                             gsub('  +', ' ',
+                                  paste0(comp.c, ' vs ', ref.c, ': ',
+                                         rndformat(effect), ' (', rndformat(lcl), ', ',
+                                         rndformat(ucl), ')')))))
+
+## -- Create a single faceted plot for all covariate HRs vs reference levels -----------------------
+## Change column names to work better in tooltips
+names(ors.fim) <- gsub('flevel', 'Comparison', names(ors.fim))
+names(ors.fim) <- gsub('lcl', 'Lower.CL', names(ors.fim))
+names(ors.fim) <- gsub('ucl', 'Upper.CL', names(ors.fim))
+names(ors.fim) <- gsub('effect', 'OR', names(ors.fim))
+names(ors.fim) <- gsub('ref.c', 'Reference', names(ors.fim))
+
+gg.fim <- ggplot(data = ors.fim, aes(x = Comparison, label = Reference, y = OR)) +
+  facet_wrap(~ varlabel.p, ncol = 1, scales = 'free') +
+  geom_hline(yintercept = 1, colour = 'grey90', size = 1.25) +
+  geom_pointrange(aes(ymin = Lower.CL, ymax = Upper.CL, colour = abs(log(OR)), text = tipText)) +
+  scale_color_viridis(direction = -1, end = 0.9, name = 'Effect Size<br>(Log Scale)') +
+  scale_x_discrete(name = '') +
+  scale_y_continuous(name = ' <br>Odds Ratios (95% Confidence Intervals), FIM Score at Discharge<br> ',
+                     breaks = c(0.25, 0.5, 1, 1.25, 1.5, 2, 4, 8, 16)) +
+  guides(fill = FALSE) +
+  theme_bw() +
+  theme(axis.text = element_text(size = 8))
+
+```
+
+
+```{r print_fim_figures, results = 'asis', fig.width=8.5, fig.height=35}
+gg.fim %>%
+  ggplotly(tooltip = c("text"))
 
 ```
 
