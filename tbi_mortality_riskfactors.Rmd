@@ -45,8 +45,6 @@ library(rms)
 library(plotly)
 library(viridis)
 library(mice)
-library(htmltools)
-library(metricsgraphics)
 
 ## Home directory (if on Mac, assumes connected to desktop via Samba)
 if(Sys.info()['sysname'] == 'Darwin'){
@@ -112,6 +110,7 @@ table_nums("dcfds_missing", caption = "Missingness for Delirium/Coma-Free Days M
 table_nums(name = 'dcfds_results', caption = 'Model Results Summary, Delirium/Coma-Free Days')
 table_nums("fim_missing", caption = "Missingness for FIM Model")
 table_nums(name = 'fim_results', caption = 'Model Results Summary, FIM at Discharge')
+table_nums(name = 'hospdc_results', caption = 'Model Results Summary, Time to Hospital Discharge')
 
 table_nums(name = 'package_info', caption = 'R Packages Loaded')
 
@@ -125,6 +124,7 @@ figure_nums(name = 'mort_3yr_figures', 'Hazard Ratios and 95% CIs, Three-Year Mo
 figure_nums(name = 'deldays_figures', 'Adjusted Counts and 95% CIs, Delirium Days')
 figure_nums(name = 'dcfds_figures', 'Odds Ratios and 95% CIs, Delirium/Coma-Free Days')
 figure_nums(name = 'fim_figures', 'Odds Ratios and 95% CIs, Functional Independence Measure at Discharge')
+figure_nums(name = 'hospdc_figures', 'Hazard Ratios and 95% CIs, Time to Hospital Discharge')
 
 ## -- Load analysis data sets, additional data management ------------------------------------------
 load('AnalysisData/tbi_datasets.Rdata')
@@ -471,7 +471,7 @@ To identify potential risk factors for both in-hospital and three-year mortality
 we will use Cox proportional hazards regression with both baseline and time-dependent covariates.
 
 ## In-Hospital Mortality
-### Model Covariates
+### Model Covariates {#mortinhospcovariates}
 We will include the following covariates in the in-hospital mortality model (reference levels for
 categorical variables are listed first):
 
@@ -595,7 +595,7 @@ rownames(mort.inhosp.daily.missing) <- NULL
 
 ```
 
-### Patient Inclusion and Missing Data
+### Patient Inclusion and Missing Data {#mortinhospmissing}
 Out of `r length(pts.inc)` patients eligible to be included in the in-hospital mortality model, `r n.exc.mort.inhosp` are missing one or more baseline covariates and will be excluded, leaving **`r length(pts.inc.mort.inhosp)`** patients included. `r table_nums("mort_inhosp_missing_baseline", display = 'cite')` details how many otherwise eligible patients are missing which baseline covariates.
 
 #### `r table_nums("mort_inhosp_missing_baseline")`
@@ -688,7 +688,7 @@ options(datadist = 'dd.inhosp')
 
 ```
 
-### Redundancy Analysis
+### Redundancy Analysis {#mortinhospredun}
 To see if any of the covariates in our in-hospital mortality model are nearly fully explained by the
 others, we performed a redundancy analysis. Adjusted R^2^ values for each covariate are shown below.
 
@@ -2214,7 +2214,7 @@ names(results.fim) <- gsub('HR ', 'OR ', cph.results.headers)
 ```
 
 ```{r print_fim_results, results = 'asis'}
-pandoc.table(results.fim[1:(nrow(results.fim) - 15),],
+pandoc.table(results.fim[1:(nrow(results.fim) - 10),],
              justify = 'lrrrrrr', style = 'rmarkdown', split.tables = 800)
 ```
 
@@ -2303,6 +2303,231 @@ gg.fim %>%
 
 ```
 
+# Time to Hospital Discharge
+To identify potential predictors of time to hospital discharge (~ hospital length of stay) among
+all patients in our cohort, we will use Cox proportional hazards regression, including the same
+baseline and time-dependent covariates used for [in-hospital mortality](#mortinhospcovariates).
+Again, due to the complexity of imputing both baseline and daily covariates in a time-dependent
+model, we will exclude the `r n.exc.mort.inhosp` patients missing baseline covariates. Please see
+previous sections for detailed information on [missing covariates](#mortinhospmissing) and [covariate redundancy](#mortinhospredun).
+
+```{r hospdc_datamgmt}
+## -- Create data set for time to discharge model --------------------------------------------------
+## Create beginning time-varying data set
+tv.hospdc <- create_countprocess_data(org.data = daily.mort.inhosp.org,
+                                      id.var = 'mrn',
+                                      record.var = 'study.day',
+                                      time.var = 'time.death.dc',
+                                      event.var = 'hosp.death',
+                                      event.string = 'No',
+                                      data.set = tbi.oneobs.icu,
+                                      out.strings = c('Still in hospital', 'Discharged today'))
+
+modeldata.hospdc <- tv.hospdc %>%
+  ## Replace -9999s with NAs, refactor applicable variables
+  mutate(max.motor.imp = set.backto.na(max.motor.imp),
+         pupil.react.imp = factor(set.backto.na(pupil.react.imp),
+                                  levels = 1:3, labels = levels(tbi.daily$pupil.react.imp)),
+         min.glucose.imp = set.backto.na(min.glucose.imp),
+         min.hemoglobin.imp = set.backto.na(min.hemoglobin.imp),
+         min.sodium.imp = set.backto.na(min.sodium.imp),
+         mental.status = factor(set.backto.na(mental.status),
+                                levels = 1:3, labels = levels(tbi.daily$mental.status))) %>%
+  ## Add on baseline variables
+  left_join(base.mort.inhosp, ., by = 'mrn')
+
+## For some reason, labels for some variables are not preserved. Add them again. Sigh.
+label(modeldata.hospdc$max.motor.imp) <- label(tbi.daily$max.motor.imp)
+label(modeldata.hospdc$pupil.react.imp) <- label(tbi.daily$pupil.react.imp)
+label(modeldata.hospdc$min.glucose.imp) <- label(tbi.daily$min.glucose.imp)
+label(modeldata.hospdc$min.hemoglobin.imp) <- label(tbi.daily$min.hemoglobin.imp)
+label(modeldata.hospdc$min.sodium.imp) <- label(tbi.daily$min.sodium.imp)
+label(modeldata.hospdc$mental.status) <- label(tbi.daily$mental.status)
+label(modeldata.hospdc$max.icp.dich) <- label(tbi.daily$max.icp.dich)
+label(modeldata.hospdc$any.alpha2) <- label(tbi.daily$any.alpha2)
+label(modeldata.hospdc$any.prbc) <- label(tbi.daily$any.prbc)
+label(modeldata.hospdc$any.plasmaplt) <- label(tbi.daily$any.plasmaplt)
+label(modeldata.hospdc$pupil.react.imp) <- label(tbi.daily$pupil.react.imp)
+## Shorten super long label for modified SOFA
+label(modeldata.hospdc$sofa.mod.nanormal.imp) <- 'Modified SOFA (missing comp. = 0)'
+
+dd.hospdc <- datadist(modeldata.hospdc, adjto.cat = 'first')
+options(datadist = 'dd.hospdc')
+
+```
+
+```{r hospdc_fitmod}
+## -- Imputation for in-hospital mortality ---------------------------------------------------------
+set.seed(56)
+areg.hospdc <- aregImpute(~ age + gender + insurance.code + iss + cpr.yn + marshall.comb +
+                            pt.cerebral.na + hosp.death + I(max.motor.imp) + pupil.react.imp +
+                            min.glucose.imp + min.hemoglobin.imp + min.sodium.imp +
+                            mental.status + sofa.mod.nanormal.imp + max.icp.dich +
+                            tot.opioid.cube + tot.benzo.cube + tot.antipsyc.cube +
+                            tot.betablock.cube + tot.propofol.cube + any.alpha2 + any.prbc +
+                            any.plasmaplt + start.day,
+                          data = modeldata.hospdc,
+                          n.impute = 5, burnin = 3)
+
+## -- Fit model for hospital discharge -------------------------------------------------------------
+Surv.hospdc <- with(modeldata.hospdc, {
+  Surv(time = start.day, time2 = stop.day, event = as.numeric(died)) })
+
+mod.hospdc <- fit.mult.impute(Surv.hospdc ~ rcs(age, 4) + gender + insurance.code +
+                                rcs(iss, 4) + cpr.yn + marshall.comb + pt.cerebral.na +
+                                max.motor.imp + pupil.react.imp + rcs(min.glucose.imp, 4) +
+                                rcs(min.hemoglobin.imp, 4) + rcs(min.sodium.imp, 4) +
+                                mental.status + rcs(sofa.mod.nanormal.imp, 4) +
+                                ## Drug doses with enough variability to include w/ splines
+                                rcs(tot.opioid.cube, 4) + rcs(tot.benzo.cube, 4) +
+                                rcs(tot.betablock.cube, 4) +
+                                ## 3 drugs have too many 0s + otherwise sparse data,
+                                ## can't fit splines
+                                tot.antipsyc.cube + tot.propofol.cube +
+                                ## Alpha-2 agonists and blood products have too many 0s + wide
+                                ## range; dichotomize
+                                any.alpha2 + any.prbc + any.plasmaplt,
+                              fitter = cph,
+                              xtrans = areg.hospdc,
+                              data = modeldata.hospdc,
+                              x = TRUE, y = TRUE)
+
+```
+
+## Model Assumptions
+
+We checked the proportional hazards assumption graphically, looking at the time-dependent coefficient (beta(t)) over time for each model coefficient (code can be shown below).
+
+```{r hospdc_checkph, results='hide'}
+## -- Check proportional hazard assumption ---------------------------------------------------------
+zph.hospdc <- cox.zph(mod.hospdc, transform = 'log')
+
+par(mfrow = c(1, 2))
+plot(zph.hospdc, col = 'red', lwd = 2)
+abline(v = 0, lty = 2, col = 'gray')
+par(mfrow = c(1, 1))
+
+## Text for when figure is included:
+# `r figure_nums('mort_inhosp_zph', display = 'cite')` graphically examines the proportional hazards
+# assumption (that beta(t) is roughly constant over time; in other words, we want to see flat lines).
+# 
+# #### `r figure_nums('mort_inhosp_zph')`
+
+```
+
+We do not show the figures here to conserve space, but the proportional hazards
+assumption was generally satisfied, though it did get understandably wobbly when data was very
+sparse (longest followup times).
+
+## Model Results
+`r table_nums('hospdc_results', display = 'cite')` presents a summary of results from the
+time to hospital discharge model. Hazard ratios indicate a comparison between the "comparison" vs
+the "reference" columns, holding all other covariates at the median or reference category. For example, a patient who was `r round(dd.hospdc$limits$age[3])` years old at the time of injury has about `r round(summary(mod.hospdc, age = c(dd.hospdc$limits$age[1], dd.hospdc$limits$age[3]), est.all = FALSE)[2, 'Effect'], 1)` times the hazard of discharge at any time point compared to a patient who was `r round(dd.hospdc$limits$age[1])` years old, assuming all other covariates are equal. Where possible, the reference and comparison values for continuous variables are the 25th and 75th percentiles, respectively; for variables where these quantities are the same (eg, several drug doses), these values are the minimum and maximum.
+
+**Please note** that while p-values reflect the entire association of each covariate with our
+outcome, hazard ratios are only valid for the comparisons listed: For continuous covariates which are allowed to have a nonlinear association with time to discharge, the hazard ratios depend on the
+two values we choose; for categorical covariates with more than two categories, the hazard ratios depend on the reference level chosen. More detailed hazard ratios are displayed in `r figure_nums('hospdc_figures', display = 'cite')`.
+
+### `r table_nums('hospdc_results')`
+```{r hospdc_results}
+results.hospdc <- rms_model_results(mod.hospdc,
+                                    labeldf = modeldata.hospdc,
+                                    printFormat = 'markdown')
+names(results.hospdc) <- cph.results.headers
+
+```
+
+```{r print_hospdc_results, results = 'asis'}
+pandoc.table(results.hospdc, justify = 'lrrrrrr', style = 'rmarkdown', split.tables = 800)
+```
+
+#### `r figure_nums('hospdc_figures')`
+For numeric variables, all hazard ratios are for comparison to the median, our best "typical" value;
+comparison values are the 10th, 25th, 75th, and 90th percentiles by default, though in some cases
+(drug doses, for example), some of these percentiles are the same. For categorical variables, the
+reference level is the lefthand level.
+
+```{r hospdc_figures}
+## -- Get data frame of all HRs for all covariates -------------------------------------------------
+## Get all unique variables used in model fit
+vars.hospdc <- unique(gsub("'+|=.+$", "", names(mod.hospdc$coefficients)))
+
+hrs.hospdc <- bind_rows(lapply(vars.hospdc,
+                               FUN = rms_calc_comparisons,
+                               rmsObj = mod.hospdc,
+                               getRatios = TRUE,
+                               df = modeldata.hospdc))
+
+## -- Add variable *labels* ------------------------------------------------------------------------
+hrs.hospdc.labels <- as.data.frame(do.call(rbind,
+                                           lapply(vars.hospdc, FUN = function(v){
+                                             c('variable' = v,
+                                               'varlabel' = label(modeldata.hospdc[,v]))
+                                           })))
+hrs.hospdc <- hrs.hospdc %>%
+  left_join(hrs.hospdc.labels, by = 'variable') %>%
+  left_join(dplyr::select(results.hospdc, Covariate, P),
+            by = c("varlabel" = "Covariate"))
+
+## -- Create properly ordered factor levels --------------------------------------------------------
+hrs.hospdc.flevels <-
+  ## Get all unique factor levels + whether they are reference
+  unique(subset(hrs.hospdc, select = c(comp.c, is.ref))) %>%
+  ## Create variables by which to order: numeric/NA, then for character, whether reference
+  ## (numeric levels will always be ordered by numeric value, regardless of reference)
+  mutate(level.num = as.numeric(as.character(comp.c)),
+         is.ref.factor = ifelse(!is.na(level.num), FALSE, is.ref)) %>%
+  ## Only need original, new reference indicator, and numeric
+  dplyr::select(comp.c, is.ref.factor, level.num) %>%
+  ## Take only unique: no need for multiple 0 levels, for example
+  unique() %>%
+  ## Sort all possible levels by 1. numeric values in order, 2. all reference levels,
+  ## 3. all other character levels
+  arrange(level.num, desc(is.ref.factor)) %>%
+  ## Give each unique value a numeric value
+  mutate(flevel.num = 1:nrow(.))
+
+## Merge numeric values onto original data set, create final factor variable
+hrs.hospdc <- hrs.hospdc %>%
+  left_join(dplyr::select(hrs.hospdc.flevels, comp.c, flevel.num),
+            by = c('comp.c')) %>%
+  mutate(flevel = factor(flevel.num, labels = hrs.hospdc.flevels$comp.c),
+         varlabel.p = paste0(varlabel, '; P: ', P),
+         tipText = gsub('^ *', '',
+                        gsub('\\( +', '\\(',
+                             gsub('  +', ' ',
+                                  paste0(comp.c, ' vs ', ref.c, ': ',
+                                         rndformat(effect), ' (', rndformat(lcl), ', ',
+                                         rndformat(ucl), ')')))))
+
+## -- Create a single faceted plot for all covariate HRs vs reference levels -----------------------
+## Change column names to work better in tooltips
+names(hrs.hospdc) <- gsub('flevel', 'Comparison', names(hrs.hospdc))
+names(hrs.hospdc) <- gsub('lcl', 'Lower.CL', names(hrs.hospdc))
+names(hrs.hospdc) <- gsub('ucl', 'Upper.CL', names(hrs.hospdc))
+names(hrs.hospdc) <- gsub('effect', 'HR', names(hrs.hospdc))
+names(hrs.hospdc) <- gsub('ref.c', 'Reference', names(hrs.hospdc))
+
+gg.hospdc <- ggplot(data = hrs.hospdc, aes(x = Comparison, label = Reference, y = HR)) +
+  facet_wrap(~ varlabel.p, ncol = 1, scales = 'free') +
+  geom_hline(yintercept = 1, colour = 'grey90', size = 1.25) +
+  geom_pointrange(aes(ymin = Lower.CL, ymax = Upper.CL, colour = abs(log(HR)), text = tipText)) +
+  scale_color_viridis(direction = -1, end = 0.9, name = 'Effect Size<br>(Log Scale)') +
+  scale_x_discrete(name = '') +
+  scale_y_continuous(name = ' <br>Hazard Ratios (95% Confidence Intervals), Time to Hospital Discharge<br> ',
+                     breaks = c(0.25, 0.5, 1, 1.25, 1.5, 2, 4, 8, 16)) +
+  guides(fill = FALSE) +
+  theme_bw() +
+  theme(axis.text = element_text(size = 8))
+
+```
+
+```{r print_hospdc_figures, results = 'asis', fig.width=8.5, fig.height=75}
+gg.hospdc %>%
+  ggplotly(tooltip = c("text"))
+
+```
+
 # Software Details
 
 ---
@@ -2314,3 +2539,7 @@ gg.fim %>%
 pander(devtools::session_info()$packages)
 ```
 </details>
+
+```{r save_image}
+save.image(file = paste0('tbimort_', Sys.Date(), '.Rdata'))
+```
