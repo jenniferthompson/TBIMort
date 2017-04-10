@@ -2155,6 +2155,9 @@ p %>%
 ```
 
 ```{r fim_fitmod}
+## -- Set datadist ---------------------------------------------------------------------------------
+options(datadist = 'dd.survivors')
+
 ## -- Fit model for FIM score ----------------------------------------------------------------------
 mod.fim <- fit.mult.impute(fim.total ~ rcs(age, 4) + gender + insurance.code + rcs(iss, 4) +
                              cpr.yn + marshall.comb + pt.cerebral.na + days.motor.lt6 +
@@ -2169,9 +2172,6 @@ mod.fim <- fit.mult.impute(fim.total ~ rcs(age, 4) + gender + insurance.code + r
                            xtrans = mids.survivors,
                            data = withmiss.survivors,
                            x = TRUE, y = TRUE)
-
-## -- Set datadist ---------------------------------------------------------------------------------
-options(datadist = 'dd.survivors')
 
 ```
 
